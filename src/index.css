@@ -1404,3 +1404,63 @@ body.theme-light .drag-overlay-inner {
   background: rgba(255, 255, 255, 0.9);
   color: var(--text-primary);
 }
+
+/* ── Mobile Responsive Overrides ─────────────────────────────── */
+@media (max-width: 768px) {
+  /* Toolbar */
+  .toolbar {
+    padding: 0 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .toolbar-brand {
+    display: none; /* Save space on mobile */
+  }
+  .toolbar-controls {
+    flex: 1;
+    justify-content: flex-start;
+  }
+  .btn > span:not(.btn-icon-label-sm) {
+    display: none; /* Hide labels, keep icons */
+  }
+  
+  /* Split layout vertical mode */
+  .split-vertical .split-divider {
+    cursor: row-resize;
+  }
+  .split-vertical .divider-handle {
+    width: 30px;
+    height: 4px;
+    transform: none;
+  }
+
+  /* Modals */
+  .palette-modal, .shortcuts-drawer {
+    width: 95vw !important;
+    max-width: 100vw;
+  }
+  .settings-dropdown {
+    width: calc(100vw - 16px);
+    right: 8px;
+    top: calc(100% + 4px);
+  }
+  
+  /* Status Bar */
+  .status-bar {
+    padding: 0 8px;
+    font-size: 10px;
+  }
+  .status-item span:not(.status-badge) {
+    display: none;
+  }
+}
+
+/* Performance Markers */
+.badge-perf { background: var(--accent-1); color: var(--bg-console); font-weight: 700; }
+.perf-mark, .perf-measure { font-family: var(--font-code); font-size: 13px; color: var(--text-primary); width: 100%; }
+.perf-measure strong, .perf-mark strong { color: var(--accent-1); }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SerializedValue } from '../lib/serializer';
 
-export type LogLevel = 'log' | 'warn' | 'error' | 'info' | 'table' | 'return' | 'system';
+export type LogLevel = 'log' | 'warn' | 'error' | 'info' | 'table' | 'return' | 'system' | 'perf';
 
 export interface LogEntry {
   id: string;
@@ -22,6 +22,7 @@ export interface HistoryEntry {
 type WorkerOutboundMessage =
   | { type: 'console'; level: 'log' | 'warn' | 'error' | 'info' | 'table'; args: SerializedValue[] }
   | { type: 'return'; value: SerializedValue }
+  | { type: 'perf'; action: 'mark' | 'measure'; name: string; duration?: number; startTime: number }
   | { type: 'done'; elapsed: number }
   | { type: 'error'; message: string; name: string; stack?: string; lineNumber?: number };
 
@@ -113,6 +114,17 @@ export function useCodeRunner(): UseCodeRunnerResult {
           break;
         case 'error':
           appendEntry({ id: uid(), level: 'error', args: [{ __type: 'error', message: msg.message, name: msg.name, stack: msg.stack }], timestamp: Date.now() });
+          break;
+        case 'perf':
+          appendEntry({
+            id: uid(),
+            level: 'perf',
+            args: [{
+              __type: 'primitive',
+              value: JSON.stringify({ action: msg.action, name: msg.name, duration: msg.duration, startTime: msg.startTime })
+            }],
+            timestamp: Date.now()
+          });
           break;
         case 'done':
           if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }

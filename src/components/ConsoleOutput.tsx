@@ -25,6 +25,7 @@ function levelBadge(level: string): { label: string; className: string } {
     case 'table':  return { label: 'TABLE',    className: 'badge-table' };
     case 'return': return { label: '↩ RET',    className: 'badge-return' };
     case 'system': return { label: 'SYS',      className: 'badge-system' };
+    case 'perf':   return { label: '⏱ PERF',   className: 'badge-perf' };
     default:       return { label: 'LOG',      className: 'badge-log' };
   }
 }
@@ -156,6 +157,25 @@ function ConsoleEntry({ entry, count }: { entry: DedupEntry; count: number }) {
       <div className="entry-content">
         {entry.level === 'table'
           ? <TableView args={entry.args} />
+          : entry.level === 'perf'
+          ? (() => {
+              const data = JSON.parse(entry.args[0].value as string);
+              if (data.action === 'mark') {
+                return <div className="perf-mark">Mark <strong>{data.name}</strong> at {data.startTime.toFixed(2)}ms</div>;
+              } else {
+                return (
+                  <div className="perf-measure">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ minWidth: '120px' }}>Measure <strong>{data.name}</strong></span>
+                      <div style={{ flex: 1, background: 'var(--border)', height: '6px', borderRadius: '3px', overflow: 'hidden', position: 'relative' }}>
+                        <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: '100%', background: 'linear-gradient(90deg, var(--accent-1) 0%, var(--accent-2) 100%)', opacity: 0.8 }} />
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>{data.duration?.toFixed(2)}ms</span>
+                    </div>
+                  </div>
+                );
+              }
+            })()
           : <div className="entry-args">
               {entry.args.map((arg, i) => (
                 <span key={i} className="entry-arg">

@@ -8,6 +8,7 @@ export interface Settings {
   tabSize: number;        // 2 | 4
   wordWrap: boolean;
   consoleFontSize: number; // 11 | 12 | 13 | 14
+  githubToken: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -16,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tabSize: 2,
   wordWrap: true,
   consoleFontSize: 12.5,
+  githubToken: '',
 };
 
 export function loadSettings(): Settings {

@@ -14,6 +14,7 @@ import { serialize, serializeArgs, type SerializedValue } from './lib/serializer
 type WorkerOutboundMessage =
   | { type: 'console'; level: 'log' | 'warn' | 'error' | 'info' | 'table'; args: SerializedValue[] }
   | { type: 'return'; value: SerializedValue }
+  | { type: 'perf'; action: 'mark' | 'measure'; name: string; duration?: number; startTime: number }
   | { type: 'done'; elapsed: number }
   | { type: 'error'; message: string; name: string; stack?: string; lineNumber?: number };
 
@@ -38,7 +39,12 @@ const originalConsole = {
   error: console.error.bind(console),
   info: console.info.bind(console),
   table: console.table.bind(console),
+  time: console.time?.bind(console),
+  timeLog: console.timeLog?.bind(console),
+  timeEnd: console.timeEnd?.bind(console),
 };
+
+const timers = new Map<string, number>();
 
 function patchConsole() {
   const levels = ['log', 'warn', 'error', 'info', 'table'] as const;
@@ -48,13 +54,101 @@ function patchConsole() {
       send({ type: 'console', level, args: serializeArgs(args) });
     };
   }
+
+  (console as any).time = (label = 'default') => {
+    try { originalConsole.time?.(label); } catch {}
+    timers.set(label, performance.now());
+  };
+
+  (console as any).timeLog = (label = 'default', ...args: unknown[]) => {
+    try { originalConsole.timeLog?.(label, ...args); } catch {}
+    const start = timers.get(label);
+    if (start === undefined) {
+      send({ type: 'console', level: 'warn', args: serializeArgs([`Timer '${label}' does not exist`]) });
+      return;
+    }
+    const elapsed = performance.now() - start;
+    send({ type: 'console', level: 'info', args: serializeArgs([`${label}: ${elapsed.toFixed(3)} ms`, ...args]) });
+  };
+
+  (console as any).timeEnd = (label = 'default') => {
+    try { originalConsole.timeEnd?.(label); } catch {}
+    const start = timers.get(label);
+    if (start === undefined) {
+      send({ type: 'console', level: 'warn', args: serializeArgs([`Timer '${label}' does not exist`]) });
+      return;
+    }
+    const elapsed = performance.now() - start;
+    timers.delete(label);
+    send({ type: 'console', level: 'info', args: serializeArgs([`${label}: ${elapsed.toFixed(3)} ms - timer ended`]) });
+  };
 }
 
 patchConsole();
 
+// ── Performance patching ────────────────────────────────────────────────────────
+const originalPerformance = {
+  mark: performance.mark.bind(performance),
+  measure: performance.measure.bind(performance),
+  clearMarks: performance.clearMarks.bind(performance),
+  clearMeasures: performance.clearMeasures.bind(performance),
+};
+
+(performance as any).mark = (name: string, options?: PerformanceMarkOptions) => {
+  const entry = originalPerformance.mark(name, options);
+  send({ type: 'perf', action: 'mark', name: entry.name, startTime: entry.startTime });
+  return entry;
+};
+
+(performance as any).measure = (name: string, startMark?: string, endMark?: string) => {
+  const entry = originalPerformance.measure(name, startMark, endMark);
+  send({ type: 'perf', action: 'measure', name: entry.name, duration: entry.duration, startTime: entry.startTime });
+  return entry;
+};
+
 // ── TypeScript → JavaScript transpilation ─────────────────────────────────────
+function rewriteImports(code: string): string {
+  // Regex to match ES6 imports and convert to dynamic imports via esm.sh
+  const importRegex = /import\s+(?:([\w*{},\s]+)\s+from\s+)?['"]([^'"]+)['"]\s*;?/g;
+
+  return code.replace(importRegex, (match, clauses, pkg) => {
+    if (!pkg.startsWith('http') && !pkg.startsWith('.') && !pkg.startsWith('/')) {
+      pkg = `https://esm.sh/${pkg}`;
+    }
+    
+    if (!clauses) {
+      return `await import("${pkg}");`;
+    }
+
+    clauses = clauses.trim();
+    
+    // import * as name from 'pkg'
+    if (clauses.startsWith('* as ')) {
+      const alias = clauses.replace('* as ', '').trim();
+      return `const ${alias} = await import("${pkg}");`;
+    }
+
+    // import { a, b as c } from 'pkg'
+    if (clauses.startsWith('{')) {
+      const destructured = clauses.replace(/\s+as\s+/g, ': ');
+      return `const ${destructured} = await import("${pkg}");`;
+    }
+
+    // import defaultName, { a } from 'pkg'
+    if (clauses.includes('{')) {
+      const defaultName = clauses.split(',')[0].trim();
+      const namedPart = clauses.substring(clauses.indexOf('{')).replace(/\s+as\s+/g, ': ');
+      return `const __mod_${defaultName} = await import("${pkg}");\nconst ${defaultName} = __mod_${defaultName}.default;\nconst ${namedPart} = __mod_${defaultName};`;
+    }
+
+    // import defaultName from 'pkg'
+    return `const ${clauses} = (await import("${pkg}")).default;`;
+  });
+}
+
 function transpile(tsCode: string): string {
-  const { code } = transform(tsCode, {
+  const codeWithDynamicImports = rewriteImports(tsCode);
+  const { code } = transform(codeWithDynamicImports, {
     transforms: ['typescript'],
     jsxRuntime: 'classic',
     production: false,

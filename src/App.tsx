@@ -20,6 +20,14 @@ import {
 } from './lib/files';
 import { loadSettings, saveSettings, type Settings } from './lib/settings';
 import { getShareableUrl, getSharedCodeFromUrl, clearShareUrl } from './lib/share';
+import { exportToGist } from './lib/gist';
+import { acquireTypes } from './lib/ata';
+
+declare global {
+  interface Window {
+    _ataTimer: ReturnType<typeof setTimeout>;
+  }
+}
 
 const isMac = navigator.platform.toUpperCase().includes('MAC') || navigator.userAgent.includes('Mac');
 
@@ -86,6 +94,7 @@ export default function App() {
   const [showPalette, setShowPalette] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [shareStatus, setShareStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [gistStatus, setGistStatus] = useState<'idle' | 'exporting' | 'copied' | 'error'>('idle');
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [charCount, setCharCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
@@ -197,6 +206,10 @@ export default function App() {
       const currentActiveId = activeIdRef.current;
       setFiles(prev => updateFileCode(prev, currentActiveId, value));
       setCharCount(value.length);
+
+      // Fetch ATA types
+      if (window._ataTimer) clearTimeout(window._ataTimer);
+      window._ataTimer = setTimeout(() => acquireTypes(value), 1000);
 
       // Auto-run debounce
       if (autoRunRef.current) {
@@ -326,6 +339,30 @@ export default function App() {
     }
     setTimeout(() => setShareStatus('idle'), 2000);
   }, [activeFile.code]);
+
+  const handleExportGist = useCallback(async () => {
+    if (!settings.githubToken) {
+      alert("Please enter a GitHub Personal Access Token in Settings first.");
+      return;
+    }
+    setGistStatus('exporting');
+    
+    // Sync models to filesRef before exporting
+    const currentFiles = filesRef.current.map(f => {
+      const model = modelMapRef.current.get(f.id);
+      return model && !model.isDisposed() ? { ...f, code: model.getValue() } : f;
+    });
+
+    try {
+      const url = await exportToGist(currentFiles, settings.githubToken);
+      await navigator.clipboard.writeText(url);
+      setGistStatus('copied');
+    } catch (e: any) {
+      alert("Export failed: " + e.message);
+      setGistStatus('error');
+    }
+    setTimeout(() => setGistStatus('idle'), 3000);
+  }, [settings.githubToken]);
 
   const handleExportZip = useCallback(async () => {
     const zip = new JSZip();
@@ -463,6 +500,8 @@ export default function App() {
         settings={settings}
         onSettingsChange={handleSettingsChange}
         shareStatus={shareStatus}
+        onExportGist={handleExportGist}
+        gistStatus={gistStatus}
       />
 
       <TabBar

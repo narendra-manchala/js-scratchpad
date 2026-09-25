@@ -116,6 +116,31 @@ export function SettingsPanel({ open, onClose, settings, onChange, anchorRef }: 
           ))}
         </div>
       </div>
+
+      <div className="settings-group" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+        <span className="settings-label">GitHub Personal Access Token (for Gists)</span>
+        <input 
+          type="password"
+          className="settings-input"
+          placeholder="ghp_..."
+          value={safeSettings.githubToken || ''}
+          onChange={e => set({ githubToken: e.target.value })}
+          style={{
+            width: '100%',
+            marginTop: '8px',
+            padding: '8px',
+            background: 'var(--bg-root)',
+            border: '1px solid var(--border-strong)',
+            color: 'var(--text-primary)',
+            borderRadius: 'var(--radius-sm)',
+            fontFamily: 'var(--font-code)',
+            fontSize: '12px'
+          }}
+        />
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+          Required to export files to GitHub Gists. Stored locally.
+        </div>
+      </div>
     </div>
   );
 }
