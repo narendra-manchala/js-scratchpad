@@ -43,8 +43,8 @@ export async function acquireTypes(code: string) {
           typesContent = `declare module "${pkg}" {\n${typesContent}\n}`;
         }
 
-        monaco.languages.typescript.javascriptDefaults.addExtraLib(typesContent, libUri);
-        monaco.languages.typescript.typescriptDefaults.addExtraLib(typesContent, libUri);
+        (monaco.languages.typescript as any).javascriptDefaults.addExtraLib(typesContent, libUri);
+        (monaco.languages.typescript as any).typescriptDefaults.addExtraLib(typesContent, libUri);
         
         console.log(`[ATA] Loaded types for ${pkg}`);
       } else {

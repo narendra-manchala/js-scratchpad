@@ -31,6 +31,9 @@ export default defineConfig({
             purpose: 'any maskable'
           }
         ]
+      },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15 MB to accommodate Monaco Editor workers
       }
     })
   ],

@@ -159,7 +159,7 @@ function ConsoleEntry({ entry, count }: { entry: DedupEntry; count: number }) {
           ? <TableView args={entry.args} />
           : entry.level === 'perf'
           ? (() => {
-              const data = JSON.parse(entry.args[0].value as string);
+              const data = JSON.parse((entry.args[0] as any).value as string);
               if (data.action === 'mark') {
                 return <div className="perf-mark">Mark <strong>{data.name}</strong> at {data.startTime.toFixed(2)}ms</div>;
               } else {
