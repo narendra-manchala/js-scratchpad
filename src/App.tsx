@@ -167,7 +167,13 @@ export default function App() {
   const getOrCreateModel = useCallback((monaco: Monaco, file: ScFile): editor.ITextModel => {
     const existing = modelMapRef.current.get(file.id);
     if (existing && !existing.isDisposed()) return existing;
-    const model = monaco.editor.createModel(file.code, 'typescript');
+    
+    const isJs = file.name.endsWith('.js');
+    const ext = isJs ? '.js' : '.ts';
+    const lang = isJs ? 'javascript' : 'typescript';
+    
+    const uri = monaco.Uri.parse(`file:///${file.id}${ext}`);
+    const model = monaco.editor.getModel(uri) || monaco.editor.createModel(file.code, lang, uri);
     modelMapRef.current.set(file.id, model);
     return model;
   }, []);
@@ -180,7 +186,7 @@ export default function App() {
     monacoInstance.languages.typescript.typescriptDefaults.setCompilerOptions({
       target: monacoInstance.languages.typescript.ScriptTarget.ESNext,
       module: monacoInstance.languages.typescript.ModuleKind.ESNext,
-      moduleResolution: monacoInstance.languages.typescript.ModuleResolutionKind.Bundler,
+      moduleResolution: monacoInstance.languages.typescript.ModuleResolutionKind.NodeJs,
       allowTopLevelAwait: true,
       lib: ['esnext', 'dom'],
       noEmit: true,
@@ -232,6 +238,23 @@ export default function App() {
     setCharCount(editorInstance.getValue().length);
     editorInstance.focus();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Synchronize Language on Rename ───────────────────────────────────────────
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+    const activeFile = files.find(f => f.id === activeId);
+    if (!activeFile) return;
+    
+    const model = modelMapRef.current.get(activeId);
+    if (model) {
+      const isJs = activeFile.name.endsWith('.js');
+      const targetLang = isJs ? 'javascript' : 'typescript';
+      if (model.getLanguageId() !== targetLang) {
+        monaco.editor.setModelLanguage(model, targetLang);
+      }
+    }
+  }, [files, activeId]);
 
   // ── File switching ────────────────────────────────────────────────────────────
   const handleSwitchFile = useCallback((id: string) => {
@@ -461,9 +484,18 @@ export default function App() {
       <div className="editor-wrapper">
         <Editor
           height="100%"
-          defaultLanguage="typescript"
+          language={files.find(f => f.id === activeId)?.name.endsWith('.js') ? 'javascript' : 'typescript'}
           theme={activeTheme === 'light' ? 'vs' : 'vs-dark'}
-          options={{ ...BASE_MONACO_OPTIONS, fontSize: settings.fontSize, tabSize: settings.tabSize, wordWrap: settings.wordWrap ? 'on' : 'off' }}
+          options={{
+            ...BASE_MONACO_OPTIONS,
+            fontSize: settings.fontSize,
+            tabSize: settings.tabSize,
+            wordWrap: settings.wordWrap ? 'on' : 'off',
+            quickSuggestions: settings.autocomplete ? { other: true, comments: true, strings: true } : false,
+            suggestOnTriggerCharacters: settings.autocomplete,
+            wordBasedSuggestions: settings.autocomplete ? 'allDocuments' : 'off',
+            parameterHints: { enabled: settings.autocomplete }
+          }}
           onMount={handleEditorMount}
           loading={<div className="editor-loading"><span className="spinner" /><span>Loading editor…</span></div>}
         />

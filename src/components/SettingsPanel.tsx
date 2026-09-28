@@ -117,6 +117,18 @@ export function SettingsPanel({ open, onClose, settings, onChange, anchorRef }: 
         </div>
       </div>
 
+      <div className="settings-group settings-row">
+        <span className="settings-label">Autocomplete (IntelliSense)</span>
+        <button
+          className={`toggle-pill ${safeSettings.autocomplete ? 'toggle-on' : ''}`}
+          onClick={() => set({ autocomplete: !safeSettings.autocomplete })}
+          role="switch"
+          aria-checked={safeSettings.autocomplete}
+        >
+          <span className="toggle-knob" />
+        </button>
+      </div>
+
       <div className="settings-group" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
         <span className="settings-label">GitHub Personal Access Token (for Gists)</span>
         <input 

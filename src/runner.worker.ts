@@ -191,20 +191,29 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
     const elapsed = performance.now() - startTime;
 
     if (err instanceof Error) {
-      // Adjust line numbers to map back to user's original code
-      const adjustedStack = err.stack?.replace(
-        /<anonymous>:(\d+)/g,
-        (_, lineStr) => `<anonymous>:${Math.max(1, parseInt(lineStr) - WRAPPER_LINE_OFFSET)}`
-      );
+      let lineNumber: number | undefined;
+      let stack = err.stack;
+      
+      // If the error has a 'loc' property, it's a compilation/syntax error from Sucrase
+      if ((err as any).loc) {
+        lineNumber = (err as any).loc.line;
+        stack = undefined; // Hide the useless Sucrase internal stack trace
+      } else {
+        // Adjust line numbers for runtime errors to map back to user's original code
+        stack = err.stack?.replace(
+          /<anonymous>:(\d+)/g,
+          (_, lineStr) => `<anonymous>:${Math.max(1, parseInt(lineStr) - WRAPPER_LINE_OFFSET)}`
+        );
 
-      const lineMatch = adjustedStack?.match(/<anonymous>:(\d+)/);
-      const lineNumber = lineMatch ? parseInt(lineMatch[1]) : undefined;
+        const lineMatch = stack?.match(/<anonymous>:(\d+)/);
+        lineNumber = lineMatch ? parseInt(lineMatch[1]) : undefined;
+      }
 
       send({
         type: 'error',
         message: err.message,
         name: err.name,
-        stack: adjustedStack ?? err.stack,
+        stack,
         lineNumber,
       });
     } else {

@@ -56,7 +56,7 @@ function Tab({
     setEditing(false);
     const trimmed = draft.trim();
     if (trimmed && trimmed !== file.name) {
-      const withExt = trimmed.endsWith('.ts') ? trimmed : `${trimmed}.ts`;
+      const withExt = (trimmed.endsWith('.ts') || trimmed.endsWith('.js')) ? trimmed : `${trimmed}.js`;
       onRename(withExt);
     }
   }, [draft, file.name, onRename]);

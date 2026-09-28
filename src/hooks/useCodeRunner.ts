@@ -113,7 +113,7 @@ export function useCodeRunner(): UseCodeRunnerResult {
           appendEntry({ id: uid(), level: 'return', args: [msg.value], timestamp: Date.now() });
           break;
         case 'error':
-          appendEntry({ id: uid(), level: 'error', args: [{ __type: 'error', message: msg.message, name: msg.name, stack: msg.stack }], timestamp: Date.now() });
+          appendEntry({ id: uid(), level: 'error', args: [{ __type: 'error', message: msg.message, name: msg.name, stack: msg.stack, lineNumber: msg.lineNumber }], timestamp: Date.now() });
           break;
         case 'perf':
           appendEntry({

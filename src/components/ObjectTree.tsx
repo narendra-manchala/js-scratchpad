@@ -22,7 +22,7 @@ function getPreview(value: SerializedValue): string {
     case 'regexp': return value.value;
     case 'function': return value.value;
     case 'circular': return `[Circular → ${value.ref}]`;
-    case 'error': return `${value.name}: ${value.message}`;
+    case 'error': return `${value.name}: ${value.message}${value.lineNumber ? ` (Line ${value.lineNumber})` : ''}`;
     case 'map': return `Map(${value.entries.length})`;
     case 'set': return `Set(${value.values.length})`;
     case 'array': {

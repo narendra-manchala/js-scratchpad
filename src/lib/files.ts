@@ -50,7 +50,7 @@ export function loadFiles(): ScFile[] {
     try { return localStorage.getItem(LEGACY_CODE_KEY); } catch { return null; }
   })();
 
-  const firstFile = makeFile('untitled-1.ts', legacyCode ?? DEFAULT_CODE);
+  const firstFile = makeFile('untitled-1.js', legacyCode ?? DEFAULT_CODE);
   return [firstFile];
 }
 
@@ -65,12 +65,11 @@ export function makeFile(name: string, code = ''): ScFile {
   };
 }
 
-/** Generate the next available "untitled-N.ts" name given existing files. */
 export function nextUntitledName(files: ScFile[]): string {
   const taken = new Set(files.map(f => f.name));
   let n = 1;
-  while (taken.has(`untitled-${n}.ts`)) n++;
-  return `untitled-${n}.ts`;
+  while (taken.has(`untitled-${n}.js`)) n++;
+  return `untitled-${n}.js`;
 }
 
 // ── CRUD helpers (return new arrays — treat files as immutable) ───────────────
@@ -114,11 +113,12 @@ export function duplicateFile(files: ScFile[], id: string): { files: ScFile[]; n
   const src = files.find(f => f.id === id);
   if (!src) return { files, newFile: files[0] };
 
-  const baseName = src.name.replace(/\.ts$/, '');
-  let candidateName = `${baseName}-copy.ts`;
+  const baseName = src.name.replace(/\.(ts|js)$/, '');
+  const ext = src.name.match(/\.(ts|js)$/)?.[0] || '.js';
+  let candidateName = `${baseName}-copy${ext}`;
   const taken = new Set(files.map(f => f.name));
   let n = 2;
-  while (taken.has(candidateName)) candidateName = `${baseName}-copy${n++}.ts`;
+  while (taken.has(candidateName)) candidateName = `${baseName}-copy${n++}${ext}`;
 
   const newFile = makeFile(candidateName, src.code);
   const srcIdx = files.findIndex(f => f.id === id);

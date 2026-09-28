@@ -8,6 +8,7 @@ export interface Settings {
   tabSize: number;        // 2 | 4
   wordWrap: boolean;
   consoleFontSize: number; // 11 | 12 | 13 | 14
+  autocomplete: boolean;
   githubToken: string;
 }
 
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tabSize: 2,
   wordWrap: true,
   consoleFontSize: 12.5,
+  autocomplete: true,
   githubToken: '',
 };
 

@@ -44,7 +44,7 @@ function valueToText(value: SerializedValue, depth = 0): string {
     case 'regexp': return value.value;
     case 'function': return value.value;
     case 'circular': return `[Circular → ${value.ref}]`;
-    case 'error': return value.stack ?? `${value.name}: ${value.message}`;
+    case 'error': return value.stack ?? `${value.name}: ${value.message}${value.lineNumber ? ` (Line ${value.lineNumber})` : ''}`;
     case 'map': {
       const entries = value.entries.map(([k, v]) => `${indent}  ${valueToText(k, depth + 1)} => ${valueToText(v, depth + 1)}`);
       return `Map(${value.entries.length}) {\n${entries.join(',\n')}\n${indent}}`;

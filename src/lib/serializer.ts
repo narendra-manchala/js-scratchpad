@@ -10,7 +10,7 @@ export type SerializedValue =
   | { __type: 'symbol'; value: string }
   | { __type: 'date'; value: string }
   | { __type: 'regexp'; value: string }
-  | { __type: 'error'; message: string; name: string; stack?: string }
+  | { __type: 'error'; message: string; name: string; stack?: string; lineNumber?: number }
   | { __type: 'function'; value: string }
   | { __type: 'circular'; ref: string }
   | { __type: 'map'; entries: Array<[SerializedValue, SerializedValue]> }
