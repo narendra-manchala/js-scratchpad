@@ -178,19 +178,21 @@ export default function App() {
     return model;
   }, []);
 
-  // ── Editor mount ─────────────────────────────────────────────────────────────
   const handleEditorMount: OnMount = useCallback((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
     monacoRef.current = monacoInstance;
-
-    monacoInstance.languages.typescript.typescriptDefaults.setCompilerOptions({
+    const tsDefaults = monacoInstance.languages.typescript.typescriptDefaults.getCompilerOptions();
+    const compilerOptions: monaco.languages.typescript.CompilerOptions = {
+      ...tsDefaults,
       target: monacoInstance.languages.typescript.ScriptTarget.ESNext,
       module: monacoInstance.languages.typescript.ModuleKind.ESNext,
       moduleResolution: monacoInstance.languages.typescript.ModuleResolutionKind.NodeJs,
       allowTopLevelAwait: true,
-      lib: ['esnext', 'dom'],
       noEmit: true,
-    });
+    };
+
+    monacoInstance.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions);
+    monacoInstance.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions);
 
     // Create models for all files
     filesRef.current.forEach(file => getOrCreateModel(monacoInstance, file));
