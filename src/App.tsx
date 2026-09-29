@@ -2,7 +2,7 @@ import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
+import type { editor, typescript } from 'monaco-editor';
 import JSZip from 'jszip';
 import { useCodeRunner, type HistoryEntry } from './hooks/useCodeRunner';
 import { ConsoleOutput } from './components/ConsoleOutput';
@@ -182,7 +182,7 @@ export default function App() {
     editorRef.current = editorInstance;
     monacoRef.current = monacoInstance;
     const tsDefaults = monacoInstance.languages.typescript.typescriptDefaults.getCompilerOptions();
-    const compilerOptions: monaco.languages.typescript.CompilerOptions = {
+    const compilerOptions: typescript.CompilerOptions = {
       ...tsDefaults,
       target: monacoInstance.languages.typescript.ScriptTarget.ESNext,
       module: monacoInstance.languages.typescript.ModuleKind.ESNext,
