@@ -4,13 +4,16 @@ const GROUPS = [
   {
     label: 'Execution',
     shortcuts: [
-      { keys: ['⌘', '↵'], desc: 'Run code' },
-      { keys: ['⌘', 'K'], desc: 'Stop execution' },
+      { keys: ['⌘', '↵'], desc: 'Run code (or selection)' },
+      { keys: ['⌘', '⇧', '↵'], desc: 'Run selected code only' },
+      { keys: ['⌘', 'L'], desc: 'Clear console' },
+      { keys: ['⌘', 'J'], desc: 'Maximize / restore console' },
     ],
   },
   {
     label: 'Editor',
     shortcuts: [
+      { keys: ['⌘', 'S'], desc: 'Save & format document' },
       { keys: ['⌘', '⇧', 'F'], desc: 'Format document' },
       { keys: ['⌘', 'F'], desc: 'Find / search' },
       { keys: ['⌘', 'Z'], desc: 'Undo' },
@@ -21,17 +24,20 @@ const GROUPS = [
     ],
   },
   {
-    label: 'Files & Navigation',
+    label: 'Tabs & Navigation',
     shortcuts: [
+      { keys: ['⌘', '1–9'], desc: 'Switch to tab 1–9' },
+      { keys: ['⌘', 'W'], desc: 'Close active tab' },
+      { keys: ['Middle-click'], desc: 'Close tab' },
+      { keys: ['Dbl-click bar'], desc: 'New file' },
       { keys: ['⌘', 'K'], desc: 'Open command palette' },
       { keys: ['⌘', '?'], desc: 'Keyboard shortcuts' },
-      { keys: ['Dbl-click'], desc: 'Rename tab' },
-      { keys: ['Right-click'], desc: 'Tab context menu' },
     ],
   },
   {
-    label: 'Console',
+    label: 'Console & Debugging',
     shortcuts: [
+      { keys: ['Click Line #'], desc: 'Jump to error in editor' },
       { keys: ['Click ▸'], desc: 'Expand object tree' },
       { keys: ['Click 📋'], desc: 'Copy entry' },
       { keys: ['◀ ▶'], desc: 'Browse execution history' },

@@ -1,9 +1,11 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LogEntry, HistoryEntry } from '../hooks/useCodeRunner';
 import { ObjectTree } from './ObjectTree';
 import type { SerializedValue } from '../lib/serializer';
 
 type FilterLevel = 'all' | 'log' | 'warn' | 'error' | 'info';
+
+const isMac = typeof navigator !== 'undefined' && (navigator.platform.toUpperCase().includes('MAC') || navigator.userAgent.includes('Mac'));
 
 interface ConsoleOutputProps {
   entries: LogEntry[];
@@ -13,6 +15,13 @@ interface ConsoleOutputProps {
   historyIdx: number;       // -1 = live
   onViewHistory: (idx: number) => void;
   consoleFontSize: number;
+  onSelectLine?: (line: number) => void;
+  onClear?: () => void;
+  clearOnRun?: boolean;
+  onToggleClearOnRun?: () => void;
+  onClearHistory?: () => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -120,9 +129,9 @@ function CopyButton({ getText, title = 'Copy' }: { getText: () => string; title?
 }
 
 // ── Table view ────────────────────────────────────────────────────────────────
-function TableView({ args }: { args: SerializedValue[] }) {
+function TableView({ args, onSelectLine }: { args: SerializedValue[]; onSelectLine?: (line: number) => void }) {
   const first = args[0];
-  if (first.__type !== 'array' && first.__type !== 'object') return <ObjectTree value={first} depth={0} />;
+  if (first.__type !== 'array' && first.__type !== 'object') return <ObjectTree value={first} depth={0} onSelectLine={onSelectLine} />;
   const rows: Array<{ key: string; value: SerializedValue }> = [];
   if (first.__type === 'array') first.items.forEach((item, i) => rows.push({ key: String(i), value: item }));
   else first.keys.forEach((key, i) => rows.push({ key, value: first.values[i] }));
@@ -138,8 +147,8 @@ function TableView({ args }: { args: SerializedValue[] }) {
           <tr key={key}>
             <td className="table-index">{key}</td>
             {hasCols && value.__type === 'object'
-              ? cols.map(col => { const ci = value.keys.indexOf(col); return <td key={col}>{ci >= 0 ? <ObjectTree value={value.values[ci]} depth={0} /> : <span className="val-null">—</span>}</td>; })
-              : <td><ObjectTree value={value} depth={0} /></td>}
+              ? cols.map(col => { const ci = value.keys.indexOf(col); return <td key={col}>{ci >= 0 ? <ObjectTree value={value.values[ci]} depth={0} onSelectLine={onSelectLine} /> : <span className="val-null">—</span>}</td>; })
+              : <td><ObjectTree value={value} depth={0} onSelectLine={onSelectLine} /></td>}
           </tr>
         ))}</tbody>
       </table>
@@ -148,15 +157,28 @@ function TableView({ args }: { args: SerializedValue[] }) {
 }
 
 // ── Single Entry ──────────────────────────────────────────────────────────────
-function ConsoleEntry({ entry, count }: { entry: DedupEntry; count: number }) {
+function ConsoleEntry({
+  entry,
+  count,
+  onSelectLine,
+}: {
+  entry: DedupEntry;
+  count: number;
+  onSelectLine?: (line: number) => void;
+}) {
   const { label, className } = levelBadge(entry.level);
   const getText = useCallback(() => entryToText(entry), [entry]);
+
+  // Check if error has line number
+  const errArg = entry.args.find(a => a.__type === 'error' && (a as any).lineNumber);
+  const errorLineNumber = errArg && errArg.__type === 'error' ? errArg.lineNumber : undefined;
+
   return (
     <div className={`console-entry entry-${entry.level}`}>
       <span className={`entry-badge ${className}`}>{label}</span>
       <div className="entry-content">
         {entry.level === 'table'
-          ? <TableView args={entry.args} />
+          ? <TableView args={entry.args} onSelectLine={onSelectLine} />
           : entry.level === 'perf'
           ? (() => {
               const data = JSON.parse((entry.args[0] as any).value as string);
@@ -179,10 +201,23 @@ function ConsoleEntry({ entry, count }: { entry: DedupEntry; count: number }) {
           : <div className="entry-args">
               {entry.args.map((arg, i) => (
                 <span key={i} className="entry-arg">
-                  <ObjectTree value={arg} depth={0} />
+                  <ObjectTree value={arg} depth={0} onSelectLine={onSelectLine} />
                   {i < entry.args.length - 1 && <span className="arg-sep"> </span>}
                 </span>
               ))}
+              {errorLineNumber && onSelectLine && (
+                <button
+                  type="button"
+                  className="error-line-link"
+                  onClick={() => onSelectLine(errorLineNumber)}
+                  title={`Jump to line ${errorLineNumber} in editor`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 2a.75.75 0 0 1 .75.75v8.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V2.75A.75.75 0 0 1 8 2z"/>
+                  </svg>
+                  Line {errorLineNumber}
+                </button>
+              )}
             </div>
         }
       </div>
@@ -210,31 +245,63 @@ export function ConsoleOutput({
   historyIdx,
   onViewHistory,
   consoleFontSize,
+  onSelectLine,
+  onClear,
+  clearOnRun = true,
+  onToggleClearOnRun,
+  onClearHistory,
+  isMaximized = false,
+  onToggleMaximize,
 }: ConsoleOutputProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<FilterLevel>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close 3-dots dropdown on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMenu]);
 
   // Determine what to display
   const isViewingHistory = historyIdx >= 0 && historyIdx < history.length;
   const displayedEntries = isViewingHistory ? history[historyIdx].entries : entries;
   const displayedExecTime = isViewingHistory ? history[historyIdx].execTime : execTime;
 
-  // Apply dedup → filter
+  // Apply dedup → filter → search
   const processed = useMemo<DedupEntry[]>(() => {
     const d = dedup(displayedEntries);
-    if (filter === 'all') return d;
-    return d.filter(e =>
-      filter === 'error' ? (e.level === 'error') :
-      filter === 'warn'  ? (e.level === 'warn')  :
-      filter === 'info'  ? (e.level === 'info')  :
-      filter === 'log'   ? (e.level === 'log' || e.level === 'return' || e.level === 'system') :
-      true
-    );
-  }, [displayedEntries, filter]);
+    let result = d;
+
+    if (filter !== 'all') {
+      result = result.filter(e =>
+        filter === 'error' ? (e.level === 'error') :
+        filter === 'warn'  ? (e.level === 'warn')  :
+        filter === 'info'  ? (e.level === 'info')  :
+        filter === 'log'   ? (e.level === 'log' || e.level === 'return' || e.level === 'system') :
+        true
+      );
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(e => entryToText(e).toLowerCase().includes(q));
+    }
+
+    return result;
+  }, [displayedEntries, filter, searchQuery]);
 
   React.useEffect(() => {
-    if (!isViewingHistory) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [entries, isViewingHistory]);
+    if (!isViewingHistory && !searchQuery) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [entries, isViewingHistory, searchQuery]);
 
   const isEmpty = processed.length === 0 && !isRunning;
   const getAllText = useCallback(() => allToText(displayedEntries), [displayedEntries]);
@@ -248,6 +315,22 @@ export function ConsoleOutput({
       {/* Header */}
       <div className="console-header">
         <span className="console-title">Console</span>
+
+        {/* Clear console button */}
+        {onClear && (
+          <button
+            className="console-header-btn console-clear-btn"
+            onClick={onClear}
+            title={`Clear console (${isMac ? '⌘' : 'Ctrl'}L)`}
+            aria-label="Clear console"
+          >
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="8" r="6.25"/>
+              <line x1="3.5" y1="3.5" x2="12.5" y2="12.5"/>
+            </svg>
+            <span className="console-header-btn-label">Clear</span>
+          </button>
+        )}
 
         {/* History navigator */}
         {history.length > 0 && (
@@ -274,20 +357,157 @@ export function ConsoleOutput({
         {isRunning && !isViewingHistory && (
           <span className="exec-running"><span className="running-dot" />Running…</span>
         )}
+
         {displayedEntries.length > 0 && (
           <CopyButton getText={getAllText} title="Copy All" />
         )}
+
+        {/* Maximize / restore panel */}
+        {onToggleMaximize && (
+          <button
+            className={`console-header-btn ${isMaximized ? 'console-header-btn-active' : ''}`}
+            onClick={onToggleMaximize}
+            title={isMaximized ? `Restore split view (${isMac ? '⌘' : 'Ctrl'}J)` : `Maximize console (${isMac ? '⌘' : 'Ctrl'}J)`}
+            aria-label={isMaximized ? 'Restore split view' : 'Maximize console'}
+          >
+            {isMaximized ? (
+              /* Inward / Collapse icon (restore split) */
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="14 7 10 7 10 3" />
+                <line x1="15" y1="2" x2="10" y2="7" />
+                <polyline points="2 9 6 9 6 13" />
+                <line x1="1" y1="14" x2="6" y2="9" />
+              </svg>
+            ) : (
+              /* Outward / Expand icon (maximize) */
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="10 2 14 2 14 6" />
+                <line x1="14" y1="2" x2="9" y2="7" />
+                <polyline points="6 14 2 14 2 10" />
+                <line x1="2" y1="14" x2="7" y2="9" />
+              </svg>
+            )}
+          </button>
+        )}
+
+        {/* Extra options 3-dots menu */}
+        <div className="console-menu-wrapper" ref={menuRef}>
+          <button
+            className={`console-header-btn console-dots-btn ${showMenu ? 'console-header-btn-active' : ''}`}
+            onClick={() => setShowMenu(s => !s)}
+            title="More console options"
+            aria-label="More options"
+            aria-expanded={showMenu}
+          >
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+              <circle cx="8" cy="3" r="1.5" />
+              <circle cx="8" cy="8" r="1.5" />
+              <circle cx="8" cy="13" r="1.5" />
+            </svg>
+          </button>
+
+          {showMenu && (
+            <div className="console-dropdown-menu" role="menu">
+              <div className="console-menu-header">Console Options</div>
+
+              {onToggleClearOnRun && (
+                <button
+                  className="console-menu-item"
+                  onClick={() => {
+                    onToggleClearOnRun();
+                  }}
+                  role="menuitemcheckbox"
+                  aria-checked={clearOnRun}
+                >
+                  <span className="console-menu-check">{clearOnRun ? '✓' : ''}</span>
+                  <div className="console-menu-text">
+                    <span className="console-menu-title">Clear on Run</span>
+                    <span className="console-menu-desc">Auto-clear console before code execution</span>
+                  </div>
+                </button>
+              )}
+
+              {displayedEntries.length > 0 && (
+                <button
+                  className="console-menu-item"
+                  onClick={() => {
+                    setShowMenu(false);
+                    navigator.clipboard.writeText(getAllText());
+                  }}
+                  role="menuitem"
+                >
+                  <span className="console-menu-icon">📋</span>
+                  <div className="console-menu-text">
+                    <span className="console-menu-title">Copy All Output</span>
+                  </div>
+                </button>
+              )}
+
+              {history.length > 0 && onClearHistory && (
+                <button
+                  className="console-menu-item"
+                  onClick={() => {
+                    setShowMenu(false);
+                    onClearHistory();
+                  }}
+                  role="menuitem"
+                >
+                  <span className="console-menu-icon">🗑</span>
+                  <div className="console-menu-text">
+                    <span className="console-menu-title">Clear Run History</span>
+                    <span className="console-menu-desc">Remove {history.length} saved runs</span>
+                  </div>
+                </button>
+              )}
+
+              <button
+                className="console-menu-item"
+                onClick={() => {
+                  setShowMenu(false);
+                  bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                role="menuitem"
+              >
+                <span className="console-menu-icon">⬇</span>
+                <div className="console-menu-text">
+                  <span className="console-menu-title">Scroll to Bottom</span>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Filter chips */}
+      {/* Filter chips & Search Row */}
       <div className="console-filter-row">
-        {FILTER_LEVELS.map(({ level, label }) => (
-          <button
-            key={level}
-            className={`filter-chip ${filter === level ? 'filter-chip-active' : ''}`}
-            onClick={() => setFilter(level)}
-          >{label}</button>
-        ))}
+        <div className="filter-chips-group">
+          {FILTER_LEVELS.map(({ level, label }) => (
+            <button
+              key={level}
+              className={`filter-chip ${filter === level ? 'filter-chip-active' : ''}`}
+              onClick={() => setFilter(level)}
+            >{label}</button>
+          ))}
+        </div>
+
+        <div className="console-search-wrapper">
+          <svg className="search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="text"
+            className="console-search-input"
+            placeholder="Filter logs…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="console-search-clear" onClick={() => setSearchQuery('')} title="Clear search">
+              ×
+            </button>
+          )}
+        </div>
+
         {isViewingHistory && (
           <span className="history-timestamp">
             {new Date(history[historyIdx].timestamp).toLocaleTimeString()} · {history[historyIdx].filename}
@@ -304,11 +524,20 @@ export function ConsoleOutput({
                 <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
               </svg>
             </div>
-            <p>{filter !== 'all' ? `No ${filter} messages` : 'No output yet'}</p>
-            {filter === 'all' && <p className="empty-hint">Press <kbd>⌘</kbd><kbd>↵</kbd> to run</p>}
+            <p>
+              {searchQuery ? `No matching logs for "${searchQuery}"` : filter !== 'all' ? `No ${filter} messages` : 'No output yet'}
+            </p>
+            {filter === 'all' && !searchQuery && <p className="empty-hint">Press <kbd>⌘</kbd><kbd>↵</kbd> to run</p>}
           </div>
         )}
-        {processed.map(entry => <ConsoleEntry key={entry.id} entry={entry} count={entry.count} />)}
+        {processed.map(entry => (
+          <ConsoleEntry
+            key={entry.id}
+            entry={entry}
+            count={entry.count}
+            onSelectLine={onSelectLine}
+          />
+        ))}
         <div ref={bottomRef} />
       </div>
     </div>

@@ -2,6 +2,27 @@ import * as monaco from 'monaco-editor';
 
 const fetchedPkgs = new Set<string>();
 
+export type AtaState = {
+  status: 'idle' | 'fetching' | 'loaded' | 'error';
+  pkg?: string;
+};
+
+type AtaListener = (state: AtaState) => void;
+const listeners = new Set<AtaListener>();
+
+export function subscribeAta(listener: AtaListener) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyAta(state: AtaState) {
+  listeners.forEach(fn => fn(state));
+}
+
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
 /**
  * Parses code for ES6 imports, fetches their types from esm.sh,
  * and injects them into Monaco editor for IntelliSense.
@@ -23,6 +44,9 @@ export async function acquireTypes(code: string) {
   for (const pkg of pkgs) {
     if (fetchedPkgs.has(pkg)) continue;
     fetchedPkgs.add(pkg);
+
+    if (idleTimer) clearTimeout(idleTimer);
+    notifyAta({ status: 'fetching', pkg });
 
     try {
       // 1. Fetch package from esm.sh to get the types header
@@ -47,11 +71,22 @@ export async function acquireTypes(code: string) {
         (monaco.languages.typescript as any).typescriptDefaults.addExtraLib(typesContent, libUri);
         
         console.log(`[ATA] Loaded types for ${pkg}`);
+        notifyAta({ status: 'loaded', pkg });
+
+        idleTimer = setTimeout(() => {
+          notifyAta({ status: 'idle' });
+        }, 3000);
       } else {
         console.warn(`[ATA] No types found for ${pkg}`);
+        notifyAta({ status: 'idle' });
       }
     } catch (e) {
       console.error(`[ATA] Failed to fetch types for ${pkg}`, e);
+      notifyAta({ status: 'error', pkg });
+      idleTimer = setTimeout(() => {
+        notifyAta({ status: 'idle' });
+      }, 3000);
     }
   }
 }
+

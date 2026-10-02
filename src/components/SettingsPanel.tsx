@@ -129,6 +129,54 @@ export function SettingsPanel({ open, onClose, settings, onChange, anchorRef }: 
         </button>
       </div>
 
+      <div className="settings-group settings-row">
+        <span className="settings-label">Clear Console on Run</span>
+        <button
+          className={`toggle-pill ${safeSettings.clearOnRun ? 'toggle-on' : ''}`}
+          onClick={() => set({ clearOnRun: !safeSettings.clearOnRun })}
+          role="switch"
+          aria-checked={safeSettings.clearOnRun}
+        >
+          <span className="toggle-knob" />
+        </button>
+      </div>
+
+      <div className="settings-group settings-row">
+        <span className="settings-label">Format Code on Run</span>
+        <button
+          className={`toggle-pill ${safeSettings.formatOnRun ? 'toggle-on' : ''}`}
+          onClick={() => set({ formatOnRun: !safeSettings.formatOnRun })}
+          role="switch"
+          aria-checked={safeSettings.formatOnRun}
+        >
+          <span className="toggle-knob" />
+        </button>
+      </div>
+
+      <div className="settings-group settings-row">
+        <span className="settings-label">Format Code on Save (⌘S)</span>
+        <button
+          className={`toggle-pill ${safeSettings.formatOnSave ? 'toggle-on' : ''}`}
+          onClick={() => set({ formatOnSave: !safeSettings.formatOnSave })}
+          role="switch"
+          aria-checked={safeSettings.formatOnSave}
+        >
+          <span className="toggle-knob" />
+        </button>
+      </div>
+
+      <div className="settings-group settings-row">
+        <span className="settings-label">Auto-detect File Type on Paste</span>
+        <button
+          className={`toggle-pill ${safeSettings.autoDetectType ? 'toggle-on' : ''}`}
+          onClick={() => set({ autoDetectType: !safeSettings.autoDetectType })}
+          role="switch"
+          aria-checked={safeSettings.autoDetectType}
+        >
+          <span className="toggle-knob" />
+        </button>
+      </div>
+
       <div className="settings-group" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
         <span className="settings-label">GitHub Personal Access Token (for Gists)</span>
         <input 

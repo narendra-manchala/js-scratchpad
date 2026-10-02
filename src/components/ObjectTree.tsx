@@ -5,6 +5,7 @@ interface ObjectTreeProps {
   value: SerializedValue;
   depth?: number;
   label?: string;
+  onSelectLine?: (line: number) => void;
 }
 
 const MAX_PREVIEW_ITEMS = 5;
@@ -74,7 +75,7 @@ function ValueChip({ value }: { value: SerializedValue }) {
   return <span className={`value-chip ${cls}`}>{getPreview(value)}</span>;
 }
 
-export function ObjectTree({ value, depth = 0, label }: ObjectTreeProps) {
+export function ObjectTree({ value, depth = 0, label, onSelectLine }: ObjectTreeProps) {
   const [expanded, setExpanded] = useState(depth === 0 && isExpandable(value));
   const toggle = useCallback(() => setExpanded(e => !e), []);
 
@@ -86,6 +87,19 @@ export function ObjectTree({ value, depth = 0, label }: ObjectTreeProps) {
       <span className="tree-leaf" style={{ paddingLeft: indent }}>
         {label && <span className="tree-key">{label}: </span>}
         <ValueChip value={value} />
+        {value.__type === 'error' && value.lineNumber && onSelectLine && (
+          <button
+            type="button"
+            className="error-line-link"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectLine(value.lineNumber!);
+            }}
+            title={`Jump to line ${value.lineNumber}`}
+          >
+            Line {value.lineNumber}
+          </button>
+        )}
       </span>
     );
   }
@@ -96,28 +110,40 @@ export function ObjectTree({ value, depth = 0, label }: ObjectTreeProps) {
         <span className="tree-arrow">{expanded ? '▾' : '▸'}</span>
         {label && <span className="tree-key">{label}: </span>}
         <span className="tree-preview">{getPreview(value)}</span>
+        {value.__type === 'error' && value.lineNumber && onSelectLine && (
+          <span
+            className="error-line-link"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectLine(value.lineNumber!);
+            }}
+            title={`Jump to line ${value.lineNumber}`}
+          >
+            Line {value.lineNumber}
+          </span>
+        )}
       </button>
 
       {expanded && (
         <div className="tree-children">
           {value.__type === 'array' && value.items.map((item, i) => (
-            <ObjectTree key={i} value={item} depth={depth + 1} label={String(i)} />
+            <ObjectTree key={i} value={item} depth={depth + 1} label={String(i)} onSelectLine={onSelectLine} />
           ))}
 
           {value.__type === 'object' && value.keys.map((key, i) => (
-            <ObjectTree key={key} value={value.values[i]} depth={depth + 1} label={key} />
+            <ObjectTree key={key} value={value.values[i]} depth={depth + 1} label={key} onSelectLine={onSelectLine} />
           ))}
 
           {value.__type === 'map' && value.entries.map(([k, v], i) => (
             <div key={i} className="tree-map-entry" style={{ paddingLeft: (depth + 1) * 16 }}>
-              <ObjectTree value={k} depth={0} />
+              <ObjectTree value={k} depth={0} onSelectLine={onSelectLine} />
               <span className="tree-arrow"> → </span>
-              <ObjectTree value={v} depth={0} />
+              <ObjectTree value={v} depth={0} onSelectLine={onSelectLine} />
             </div>
           ))}
 
           {value.__type === 'set' && value.values.map((v, i) => (
-            <ObjectTree key={i} value={v} depth={depth + 1} label={String(i)} />
+            <ObjectTree key={i} value={v} depth={depth + 1} label={String(i)} onSelectLine={onSelectLine} />
           ))}
 
           {value.__type === 'error' && value.stack && (

@@ -33,7 +33,7 @@ interface UseCodeRunnerResult {
   entries: LogEntry[];
   isRunning: boolean;
   execTime: number | null;
-  runCode: (code: string, timeoutMs: number) => void;
+  runCode: (code: string, timeoutMs: number, clearBeforeRun?: boolean) => void;
   clearConsole: () => void;
   stopCode: () => void;
 }
@@ -79,11 +79,13 @@ export function useCodeRunner(): UseCodeRunnerResult {
     });
   }, [terminateWorker, appendEntry]);
 
-  const runCode = useCallback((code: string, timeoutMs: number) => {
+  const runCode = useCallback((code: string, timeoutMs: number, clearBeforeRun = true) => {
     terminateWorker();
     setIsRunning(true);
     setExecTime(null);
-    setEntries([]);
+    if (clearBeforeRun) {
+      setEntries([]);
+    }
 
     const worker = new Worker(
       new URL('../runner.worker.ts', import.meta.url),

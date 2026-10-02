@@ -4,6 +4,8 @@ interface ResizableSplitProps {
   left: React.ReactNode;
   right: React.ReactNode;
   initialRatio?: number; // 0–1, default 0.55
+  ratio?: number;
+  onRatioChange?: (ratio: number) => void;
   minLeft?: number;      // px
   minRight?: number;     // px
 }
@@ -12,11 +14,19 @@ export function ResizableSplit({
   left,
   right,
   initialRatio = 0.55,
+  ratio: controlledRatio,
+  onRatioChange,
   minLeft = 280,
   minRight = 240,
 }: ResizableSplitProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [ratio, setRatio] = useState(initialRatio);
+  const [internalRatio, setInternalRatio] = useState(initialRatio);
+  const ratio = controlledRatio !== undefined ? controlledRatio : internalRatio;
+  const setRatio = useCallback((r: number) => {
+    setInternalRatio(r);
+    onRatioChange?.(r);
+  }, [onRatioChange]);
+
   const [isMobile, setIsMobile] = useState(false);
   const isDragging = useRef(false);
 

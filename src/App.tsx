@@ -15,13 +15,20 @@ import { ShortcutsPanel } from './components/ShortcutsPanel';
 import { PRESETS, type CodePreset } from './lib/presets';
 import { loadTimeout, saveTimeout } from './lib/storage';
 import {
-  loadFiles, saveFiles, createFile, updateFileName, updateFileCode,
+  loadFiles, saveFiles, saveFilesNow, createFile, updateFileName, updateFileCode,
   deleteFile, duplicateFile, makeFile, type ScFile,
 } from './lib/files';
 import { loadSettings, saveSettings, type Settings } from './lib/settings';
 import { getShareableUrl, getSharedCodeFromUrl, clearShareUrl } from './lib/share';
 import { exportToGist } from './lib/gist';
-import { acquireTypes } from './lib/ata';
+import { acquireTypes, subscribeAta, type AtaState } from './lib/ata';
+import {
+  detectFileType,
+  getLanguageFromFile,
+  getExtFromLanguage,
+  replaceFileExtension,
+  type SupportedLanguage,
+} from './lib/detectFileType';
 
 declare global {
   interface Window {
@@ -99,6 +106,8 @@ export default function App() {
   const [charCount, setCharCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const [isDragging, setIsDragging] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [ataState, setAtaState] = useState<AtaState>({ status: 'idle' });
 
   // ── Execution history ────────────────────────────────────────────────────────
   const [runHistory, setRunHistory] = useState<HistoryEntry[]>([]);
@@ -111,17 +120,23 @@ export default function App() {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const modelMapRef = useRef<Map<string, editor.ITextModel>>(new Map());
+  const errorDecorationsRef = useRef<editor.IEditorDecorationsCollection | null>(null);
   const autoRunRef = useRef(autoRun);
   const runCodeRef = useRef(runCode);
   const timeoutMsRef = useRef(timeoutMs);
   const activeIdRef = useRef(activeId);
   const filesRef = useRef(files);
+  const handleRunRef = useRef<(onlySelection?: boolean) => void>(() => {});
+  const handleSaveRef = useRef<() => void>(() => {});
 
   useEffect(() => { autoRunRef.current = autoRun; }, [autoRun]);
   useEffect(() => { runCodeRef.current = runCode; }, [runCode]);
   useEffect(() => { timeoutMsRef.current = timeoutMs; }, [timeoutMs]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => { filesRef.current = files; }, [files]);
+
+  // Subscribe to ATA updates
+  useEffect(() => subscribeAta(setAtaState), []);
 
   // ── Save files (debounced) ───────────────────────────────────────────────────
   useEffect(() => {
@@ -151,31 +166,70 @@ export default function App() {
     prevRunningRef.current = isRunning;
   }, [isRunning]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Global keyboard shortcuts ────────────────────────────────────────────────
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const mod = isMac ? e.metaKey : e.ctrlKey;
-      if (mod && e.key === 'k') { e.preventDefault(); setShowPalette(p => !p); }
-      if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); setShowShortcuts(p => !p); }
-      if (e.key === 'Escape') { setShowPalette(false); setShowShortcuts(false); }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   // ── Monaco model helpers ─────────────────────────────────────────────────────
   const getOrCreateModel = useCallback((monaco: Monaco, file: ScFile): editor.ITextModel => {
     const existing = modelMapRef.current.get(file.id);
     if (existing && !existing.isDisposed()) return existing;
     
-    const isJs = file.name.endsWith('.js');
-    const ext = isJs ? '.js' : '.ts';
-    const lang = isJs ? 'javascript' : 'typescript';
+    const lang = getLanguageFromFile(file.name);
+    const ext = getExtFromLanguage(lang);
     
     const uri = monaco.Uri.parse(`file:///${file.id}${ext}`);
     const model = monaco.editor.getModel(uri) || monaco.editor.createModel(file.code, lang, uri);
     modelMapRef.current.set(file.id, model);
     return model;
+  }, []);
+
+  // ── Language Switching & Auto-detect ──────────────────────────────────────────
+  const handleLanguageChange = useCallback((newLang: SupportedLanguage) => {
+    const currentActiveId = activeIdRef.current;
+    const cur = filesRef.current.find(f => f.id === currentActiveId);
+    if (!cur) return;
+    const newName = replaceFileExtension(cur.name, newLang);
+    setFiles(prev => updateFileName(prev, currentActiveId, newName));
+
+    const model = modelMapRef.current.get(currentActiveId);
+    if (model && monacoRef.current) {
+      monacoRef.current.editor.setModelLanguage(model, newLang);
+    }
+  }, []);
+
+  const handleAutoDetect = useCallback(() => {
+    const currentActiveId = activeIdRef.current;
+    const cur = filesRef.current.find(f => f.id === currentActiveId);
+    const code = editorRef.current?.getValue() ?? cur?.code ?? '';
+    const detected = detectFileType(code);
+    const targetLang: SupportedLanguage = detected === 'json' ? 'json' : detected === 'ts' ? 'typescript' : 'javascript';
+    handleLanguageChange(targetLang);
+  }, [handleLanguageChange]);
+
+  // ── Jump to Line on Error ─────────────────────────────────────────────────────
+  const handleSelectLine = useCallback((line: number) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+
+    editor.revealLineInCenter(line);
+    editor.setPosition({ lineNumber: line, column: 1 });
+    editor.focus();
+
+    if (errorDecorationsRef.current) {
+      errorDecorationsRef.current.clear();
+    }
+
+    const decs = editor.createDecorationsCollection([
+      {
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          className: 'monaco-line-highlight-error',
+        },
+      },
+    ]);
+    errorDecorationsRef.current = decs;
+    setTimeout(() => {
+      decs.clear();
+    }, 2000);
   }, []);
 
   const handleEditorMount: OnMount = useCallback((editorInstance, monacoInstance) => {
@@ -208,6 +262,21 @@ export default function App() {
       setCursorPos({ line: e.position.lineNumber, col: e.position.column });
     });
 
+    // Auto-detect file type on paste
+    editorInstance.onDidPaste(() => {
+      if (!settings.autoDetectType) return;
+      const currentActiveId = activeIdRef.current;
+      const curFile = filesRef.current.find(f => f.id === currentActiveId);
+      if (!curFile) return;
+      const value = editorInstance.getValue();
+      const detected = detectFileType(value);
+      const targetLang: SupportedLanguage = detected === 'json' ? 'json' : detected === 'ts' ? 'typescript' : 'javascript';
+      const curLang = getLanguageFromFile(curFile.name);
+      if (targetLang !== curLang && (curFile.name.startsWith('untitled-') || curFile.code.length < 50)) {
+        handleLanguageChange(targetLang);
+      }
+    });
+
     // Track content changes
     editorInstance.onDidChangeModelContent(() => {
       const value = editorInstance.getValue();
@@ -215,25 +284,52 @@ export default function App() {
       setFiles(prev => updateFileCode(prev, currentActiveId, value));
       setCharCount(value.length);
 
-      // Fetch ATA types
-      if (window._ataTimer) clearTimeout(window._ataTimer);
-      window._ataTimer = setTimeout(() => acquireTypes(value), 1000);
+      // Fetch ATA types if JS/TS
+      const currentFile = filesRef.current.find(f => f.id === currentActiveId);
+      const currentLang = currentFile ? getLanguageFromFile(currentFile.name) : 'javascript';
+      if (currentLang !== 'json') {
+        if (window._ataTimer) clearTimeout(window._ataTimer);
+        window._ataTimer = setTimeout(() => acquireTypes(value), 1000);
+      }
 
       // Auto-run debounce
       if (autoRunRef.current) {
         if (autoRunTimerRef.current) clearTimeout(autoRunTimerRef.current);
         autoRunTimerRef.current = setTimeout(() => {
-          if (!isRunning) runCodeRef.current(value, timeoutMsRef.current);
+          if (!isRunning) runCodeRef.current(value, timeoutMsRef.current, settings.clearOnRun);
         }, 800);
       }
     });
 
-    // Bind ⌘/Ctrl + Enter
+    // Bind ⌘/Ctrl + Enter (Run all or selection)
     editorInstance.addCommand(
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter,
       () => {
-        const code = editorInstance.getValue();
-        runCodeRef.current(code, timeoutMsRef.current);
+        handleRunRef.current(false);
+      }
+    );
+
+    // Bind ⌘/Ctrl + Shift + Enter (Run selection only)
+    editorInstance.addCommand(
+      monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.Enter,
+      () => {
+        handleRunRef.current(true);
+      }
+    );
+
+    // Bind ⌘/Ctrl + L (Clear console)
+    editorInstance.addCommand(
+      monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyL,
+      () => {
+        clearConsole();
+      }
+    );
+
+    // Bind ⌘/Ctrl + S (Save & format)
+    editorInstance.addCommand(
+      monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
+      () => {
+        handleSaveRef.current();
       }
     );
 
@@ -250,8 +346,7 @@ export default function App() {
     
     const model = modelMapRef.current.get(activeId);
     if (model) {
-      const isJs = activeFile.name.endsWith('.js');
-      const targetLang = isJs ? 'javascript' : 'typescript';
+      const targetLang = getLanguageFromFile(activeFile.name);
       if (model.getLanguageId() !== targetLang) {
         monaco.editor.setModelLanguage(model, targetLang);
       }
@@ -326,7 +421,8 @@ export default function App() {
     if (!file) return;
     const model = modelMapRef.current.get(id);
     const code = model && !model.isDisposed() ? model.getValue() : file.code;
-    const blob = new Blob([code], { type: 'text/typescript' });
+    const isJson = file.name.endsWith('.json');
+    const blob = new Blob([code], { type: isJson ? 'application/json' : 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = file.name; a.click();
@@ -336,11 +432,92 @@ export default function App() {
   // ── Toolbar actions ───────────────────────────────────────────────────────────
   const activeFile = files.find(f => f.id === activeId) ?? files[0];
 
-  const handleRun = useCallback(() => {
-    const code = editorRef.current?.getValue() ?? activeFile.code;
+  const handleRun = useCallback((onlySelection = false) => {
+    const editor = editorRef.current;
+    const currentActiveFile = filesRef.current.find(f => f.id === activeIdRef.current) ?? filesRef.current[0];
+    let codeToRun = currentActiveFile.code;
+
+    if (settings.formatOnRun && editor) {
+      editor.getAction('editor.action.formatDocument')?.run();
+    }
+
+    if (editor) {
+      const selection = editor.getSelection();
+      if (selection && !selection.isEmpty()) {
+        const selectedText = editor.getModel()?.getValueInRange(selection);
+        if (selectedText && selectedText.trim()) {
+          codeToRun = selectedText;
+        }
+      } else if (!onlySelection) {
+        codeToRun = editor.getValue();
+      }
+    }
+
     setHistoryIdx(-1);
-    runCode(code, timeoutMs);
-  }, [activeFile.code, runCode, timeoutMs]);
+    runCode(codeToRun, timeoutMs, settings.clearOnRun);
+  }, [runCode, timeoutMs, settings.clearOnRun, settings.formatOnRun]);
+
+  useEffect(() => {
+    handleRunRef.current = handleRun;
+  }, [handleRun]);
+
+  // ── Save & Format Handler ────────────────────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    if (settings.formatOnSave && editorRef.current) {
+      try {
+        await editorRef.current.getAction('editor.action.formatDocument')?.run();
+      } catch {
+        // ignore format errors if model is temporarily unavailable
+      }
+    }
+    const editor = editorRef.current;
+    if (editor) {
+      const value = editor.getValue();
+      setFiles(prev => {
+        const next = updateFileCode(prev, activeIdRef.current, value);
+        saveFilesNow(next);
+        return next;
+      });
+    } else {
+      saveFilesNow(filesRef.current);
+    }
+    setSaveStatus('saved');
+  }, [settings.formatOnSave]);
+
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  }, [handleSave]);
+
+  // ── Global keyboard shortcuts ────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (mod && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        handleSaveRef.current();
+      }
+      if (mod && e.key === 'k') { e.preventDefault(); setShowPalette(p => !p); }
+      if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); setShowShortcuts(p => !p); }
+      if (mod && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); clearConsole(); }
+      if (mod && (e.key === 'j' || e.key === 'J')) { e.preventDefault(); setIsMaximized(m => !m); }
+      if (mod && (e.key === 'w' || e.key === 'W') && !e.shiftKey) {
+        if (filesRef.current.length > 1) {
+          e.preventDefault();
+          handleDeleteFile(activeIdRef.current);
+        }
+      }
+      if (mod && !e.shiftKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key) - 1;
+        if (filesRef.current[idx]) {
+          e.preventDefault();
+          handleSwitchFile(filesRef.current[idx].id);
+        }
+      }
+      if (e.key === 'Escape') { setShowPalette(false); setShowShortcuts(false); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [clearConsole, handleDeleteFile, handleSwitchFile]);
 
   const handleFormat = useCallback(() => {
     editorRef.current?.getAction('editor.action.formatDocument')?.run();
@@ -413,7 +590,7 @@ export default function App() {
     e.preventDefault();
     setIsDragging(false);
     const droppedFiles = Array.from(e.dataTransfer.files).filter(f =>
-      f.name.endsWith('.ts') || f.name.endsWith('.js') || f.name.endsWith('.tsx')
+      f.name.endsWith('.ts') || f.name.endsWith('.js') || f.name.endsWith('.tsx') || f.name.endsWith('.json')
     );
     droppedFiles.forEach(file => {
       const reader = new FileReader();
@@ -444,19 +621,27 @@ export default function App() {
 
   // ── Command palette commands ───────────────────────────────────────────────────
   const paletteCommands = useMemo<PaletteCommand[]>(() => [
-    { id: 'run',       label: 'Run Code',               group: 'Execution', shortcut: `${isMac ? '⌘' : 'Ctrl'}↵`, action: handleRun },
-    { id: 'stop',      label: 'Stop Execution',          group: 'Execution', action: stopCode },
-    { id: 'format',    label: 'Format Code',             group: 'Editor',    shortcut: `${isMac ? '⌘⇧' : 'Ctrl⇧'}F`, action: handleFormat },
-    { id: 'clear',     label: 'Clear Console',           group: 'Console',   action: clearConsole },
-    { id: 'new-file',  label: 'New File',                group: 'Files',     action: handleCreateFile },
-    { id: 'download',  label: 'Download Active File',    group: 'Files',     action: () => handleDownloadFile(activeId) },
-    { id: 'share',     label: 'Copy Shareable Link',     group: 'Files',     action: handleShare },
-    { id: 'zip',       label: 'Export All Files as ZIP', group: 'Files',     action: handleExportZip },
+    { id: 'run',       label: 'Run Code',                  group: 'Execution', shortcut: `${isMac ? '⌘' : 'Ctrl'}↵`, action: () => handleRun(false) },
+    { id: 'run-sel',   label: 'Run Selection Only',        group: 'Execution', shortcut: `${isMac ? '⌘⇧' : 'Ctrl⇧'}↵`, action: () => handleRun(true) },
+    { id: 'stop',      label: 'Stop Execution',             group: 'Execution', action: stopCode },
+    { id: 'clear',     label: 'Clear Console',              group: 'Console',   shortcut: `${isMac ? '⌘' : 'Ctrl'}L`, action: clearConsole },
+    { id: 'toggle-max', label: isMaximized ? 'Restore Split View' : 'Maximize Console', group: 'Console', shortcut: `${isMac ? '⌘' : 'Ctrl'}J`, action: () => setIsMaximized(m => !m) },
+    { id: 'save',      label: settings.formatOnSave ? 'Save & Format Document' : 'Save Document', group: 'Editor', shortcut: `${isMac ? '⌘' : 'Ctrl'}S`, action: () => handleSaveRef.current() },
+    { id: 'format',    label: 'Format Code',                group: 'Editor',    shortcut: `${isMac ? '⌘⇧' : 'Ctrl⇧'}F`, action: handleFormat },
+    { id: 'autodetect', label: 'Detect File Type from Code', group: 'Editor',   action: handleAutoDetect },
+    { id: 'lang-js',   label: 'Change Language to JavaScript (.js)', group: 'Editor', action: () => handleLanguageChange('javascript') },
+    { id: 'lang-ts',   label: 'Change Language to TypeScript (.ts)', group: 'Editor', action: () => handleLanguageChange('typescript') },
+    { id: 'lang-json', label: 'Change Language to JSON (.json)',     group: 'Editor', action: () => handleLanguageChange('json') },
+    { id: 'new-file',  label: 'New File',                   group: 'Files',     action: handleCreateFile },
+    { id: 'download',  label: 'Download Active File',       group: 'Files',     action: () => handleDownloadFile(activeId) },
+    { id: 'share',     label: 'Copy Shareable Link',        group: 'Files',     action: handleShare },
+    { id: 'zip',       label: 'Export All Files as ZIP',    group: 'Files',     action: handleExportZip },
     { id: 'autorun',   label: `${autoRun ? 'Disable' : 'Enable'} Auto-Run`, group: 'Editor', action: () => setAutoRun(v => !v) },
-    { id: 'shortcuts', label: 'Keyboard Shortcuts',      group: 'Help',      shortcut: `${isMac ? '⌘' : 'Ctrl'}/`, action: () => setShowShortcuts(true) },
-    ...files.map(f => ({ id: `switch-${f.id}`, label: `Switch to ${f.name}`, group: 'Files', action: () => handleSwitchFile(f.id) })),
+    { id: 'clear-on-run', label: `${settings.clearOnRun ? 'Disable' : 'Enable'} Clear on Run`, group: 'Console', action: () => handleSettingsChange({ ...settings, clearOnRun: !settings.clearOnRun }) },
+    { id: 'shortcuts', label: 'Keyboard Shortcuts',         group: 'Help',      shortcut: `${isMac ? '⌘' : 'Ctrl'}/`, action: () => setShowShortcuts(true) },
+    ...files.map((f, i) => ({ id: `switch-${f.id}`, label: `Switch to ${f.name}`, group: 'Files', shortcut: i < 9 ? `${isMac ? '⌘' : 'Ctrl'}${i + 1}` : undefined, action: () => handleSwitchFile(f.id) })),
     ...PRESETS.map(p => ({ id: `preset-${p.id}`, label: `Load preset: ${p.label}`, group: 'Presets', action: () => handlePresetSelect(p) })),
-  ], [files, activeId, autoRun, handleRun, stopCode, handleFormat, clearConsole, handleCreateFile, handleDownloadFile, handleShare, handleExportZip, handleSwitchFile, handlePresetSelect]);
+  ], [files, activeId, autoRun, isMaximized, settings, handleRun, stopCode, handleFormat, clearConsole, handleAutoDetect, handleLanguageChange, handleCreateFile, handleDownloadFile, handleShare, handleExportZip, handleSwitchFile, handlePresetSelect, handleSettingsChange]);
 
   // ── Editor pane (stable — never remounts) ────────────────────────────────────
   const activeTheme = useMemo(() => {
@@ -465,6 +650,8 @@ export default function App() {
     }
     return settings.theme;
   }, [settings.theme]);
+
+  const activeLanguage = useMemo(() => getLanguageFromFile(activeFile.name), [activeFile.name]);
 
   const editorPane = useMemo(() => (
     <div
@@ -479,14 +666,14 @@ export default function App() {
             <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M4 16.5v-1A1.5 1.5 0 0 1 5.5 14H9"/><path d="M4 8V6.5A1.5 1.5 0 0 1 5.5 5H9"/><path d="M16.5 14H19a1.5 1.5 0 0 1 1.5 1.5v1"/><path d="M16.5 5H19A1.5 1.5 0 0 1 20.5 6.5V8"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
             </svg>
-            <p>Drop .ts / .js files here</p>
+            <p>Drop .ts / .js / .json files here</p>
           </div>
         </div>
       )}
       <div className="editor-wrapper">
         <Editor
           height="100%"
-          language={files.find(f => f.id === activeId)?.name.endsWith('.js') ? 'javascript' : 'typescript'}
+          language={activeLanguage}
           theme={activeTheme === 'light' ? 'vs' : 'vs-dark'}
           options={{
             ...BASE_MONACO_OPTIONS,
@@ -503,7 +690,8 @@ export default function App() {
         />
       </div>
     </div>
-  ), [isDragging, handleDragOver, handleDragLeave, handleDrop, settings.fontSize, settings.tabSize, settings.wordWrap, activeTheme]); // eslint-disable-line react-hooks/exhaustive-deps
+  ), [isDragging, handleDragOver, handleDragLeave, handleDrop, settings.fontSize, settings.tabSize, settings.wordWrap, settings.autocomplete, activeTheme, activeLanguage, handleEditorMount]);
+
   useEffect(() => {
     if (activeTheme === 'light') {
       document.body.classList.add('theme-light');
@@ -516,7 +704,7 @@ export default function App() {
     <div className={`app ${activeTheme === 'light' ? 'theme-light' : ''}`}>
       <Toolbar
         isRunning={isRunning}
-        onRun={handleRun}
+        onRun={() => handleRun(false)}
         onStop={stopCode}
         onClear={clearConsole}
         onFormat={handleFormat}
@@ -561,11 +749,21 @@ export default function App() {
               historyIdx={historyIdx}
               onViewHistory={setHistoryIdx}
               consoleFontSize={settings.consoleFontSize}
+              onSelectLine={handleSelectLine}
+              onClear={clearConsole}
+              clearOnRun={settings.clearOnRun}
+              onToggleClearOnRun={() => handleSettingsChange({ ...settings, clearOnRun: !settings.clearOnRun })}
+              onClearHistory={() => { setRunHistory([]); setHistoryIdx(-1); }}
+              isMaximized={isMaximized}
+              onToggleMaximize={() => setIsMaximized(m => !m)}
             />
           }
-          initialRatio={0.56}
-          minLeft={300}
-          minRight={280}
+          ratio={isMaximized ? 0.05 : 0.56}
+          onRatioChange={r => {
+            if (isMaximized && r > 0.15) setIsMaximized(false);
+          }}
+          minLeft={60}
+          minRight={240}
         />
       </main>
 
@@ -575,6 +773,10 @@ export default function App() {
         charCount={charCount}
         saveStatus={saveStatus}
         filename={activeFile.name}
+        language={activeLanguage}
+        onLanguageChange={handleLanguageChange}
+        onAutoDetect={handleAutoDetect}
+        ataState={ataState}
       />
 
       <CommandPalette

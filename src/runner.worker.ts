@@ -170,6 +170,23 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
   const startTime = performance.now();
 
   try {
+    // Step 0: Check if pure JSON
+    const trimmed = code.trim();
+    if (
+      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        send({ type: 'return', value: serialize(parsed) });
+        const elapsed = performance.now() - startTime;
+        send({ type: 'done', elapsed });
+        return;
+      } catch {
+        // Not valid JSON, proceed as JS/TS
+      }
+    }
+
     // Step 1: Strip TypeScript types → plain JavaScript
     const jsCode = transpile(code);
 

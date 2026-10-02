@@ -7,7 +7,7 @@ interface ToolbarProps {
   isRunning: boolean;
   onRun: () => void;
   onStop: () => void;
-  onClear: () => void;
+  onClear?: () => void;
   onFormat: () => void;
   onShare: () => void;
   onExportZip: () => void;
@@ -35,7 +35,7 @@ const TIMEOUT_OPTIONS = [
 ];
 
 export function Toolbar({
-  isRunning, onRun, onStop, onClear, onFormat, onShare, onExportZip,
+  isRunning, onRun, onStop, onFormat, onShare, onExportZip,
   timeoutMs, onTimeoutChange, presets, onPresetSelect, isMac,
   autoRun, onAutoRunToggle, onOpenPalette, onOpenShortcuts,
   settings, onSettingsChange, shareStatus, onExportGist, gistStatus,
@@ -120,14 +120,6 @@ export function Toolbar({
             <line x1="2" y1="5" x2="14" y2="5"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="11" x2="12" y2="11"/>
           </svg>
           <span>Format</span>
-        </button>
-
-        {/* Clear */}
-        <button id="btn-clear" className="btn btn-secondary" onClick={onClear} title="Clear console">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <polyline points="2 4 4 4 14 4"/><path d="M13 4l-1 9H4L3 4"/><path d="M7 7v4M9 7v4"/>
-          </svg>
-          <span>Clear</span>
         </button>
 
         <div className="toolbar-sep" />

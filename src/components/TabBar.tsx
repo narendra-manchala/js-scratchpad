@@ -56,7 +56,9 @@ function Tab({
     setEditing(false);
     const trimmed = draft.trim();
     if (trimmed && trimmed !== file.name) {
-      const withExt = (trimmed.endsWith('.ts') || trimmed.endsWith('.js')) ? trimmed : `${trimmed}.js`;
+      const extMatch = file.name.match(/\.(ts|js|json)$/i);
+      const defaultExt = extMatch ? extMatch[0] : '.js';
+      const withExt = /\.(ts|js|json)$/i.test(trimmed) ? trimmed : `${trimmed}${defaultExt}`;
       onRename(withExt);
     }
   }, [draft, file.name, onRename]);
@@ -74,6 +76,15 @@ function Tab({
     startEdit();
   }, [startEdit]);
 
+  const handleMouseDown = useCallback((e: RMouseEvent) => {
+    // Middle click closes tab
+    if (e.button === 1 && canDelete) {
+      e.preventDefault();
+      e.stopPropagation();
+      onDelete();
+    }
+  }, [canDelete, onDelete]);
+
   const handleContextMenu = useCallback((e: RMouseEvent) => {
     e.preventDefault();
     setCtxPos({ x: e.clientX, y: e.clientY });
@@ -86,21 +97,25 @@ function Tab({
     return () => window.removeEventListener('click', handler);
   }, [ctxPos]);
 
+  const isJson = file.name.endsWith('.json');
+  const isTs = file.name.endsWith('.ts') || file.name.endsWith('.tsx');
+
   return (
     <>
       <div
         className={`tab ${isActive ? 'tab-active' : ''}`}
         onClick={onActivate}
         onDoubleClick={handleDoubleClick}
+        onMouseDown={handleMouseDown}
         onContextMenu={handleContextMenu}
         role="tab"
         aria-selected={isActive}
-        title={file.name}
+        title={`${file.name} (Middle-click to close)`}
       >
-        {/* File icon */}
-        <svg className="tab-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-          <path d="M9.5 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5.5L9.5 1zm0 1.5L12.5 5.5H9.5V2.5z"/>
-        </svg>
+        {/* Language-aware File icon */}
+        <span className={`tab-file-icon-badge ${isJson ? 'badge-json' : isTs ? 'badge-ts' : 'badge-js'}`}>
+          {isJson ? '{}' : isTs ? 'TS' : 'JS'}
+        </span>
 
         {/* Label or rename input */}
         {editing ? (
@@ -117,19 +132,21 @@ function Tab({
           <span className="tab-label">{file.name}</span>
         )}
 
-        {/* Close button — visible on hover / active */}
-        {canDelete && !editing && (
+        {/* Close button — space reserved to prevent layout shift on hover */}
+        {!editing && canDelete ? (
           <button
             className="tab-close"
             onClick={e => { e.stopPropagation(); onDelete(); }}
-            title="Close file"
+            title="Close file (Middle-click tab also closes)"
             aria-label={`Close ${file.name}`}
           >
             <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
               <path d="M4.28 3.22a.75.75 0 0 0-1.06 1.06L6.94 8l-3.72 3.72a.75.75 0 1 0 1.06 1.06L8 9.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L9.06 8l3.72-3.72a.75.75 0 0 0-1.06-1.06L8 6.94 4.28 3.22z"/>
             </svg>
           </button>
-        )}
+        ) : !editing ? (
+          <span className="tab-close-spacer" aria-hidden="true" />
+        ) : null}
       </div>
 
       {/* Context menu */}
@@ -224,6 +241,9 @@ export function TabBar({
         className="tab-list"
         ref={scrollRef}
         onWheel={handleWheel}
+        onDoubleClick={(e) => {
+          if (e.target === scrollRef.current) onCreate();
+        }}
         role="tablist"
         aria-label="Open files"
       >
