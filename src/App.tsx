@@ -766,7 +766,7 @@ export default function App() {
               onToggleMobileExpand={() => setIsMobileExpanded(e => !e)}
             />
           }
-          ratio={0.56}
+          initialRatio={0.56}
           minLeft={60}
           minRight={240}
           isMobile={isMobile}
