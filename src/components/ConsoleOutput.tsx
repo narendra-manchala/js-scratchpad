@@ -22,6 +22,8 @@ interface ConsoleOutputProps {
   onClearHistory?: () => void;
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -252,6 +254,8 @@ export function ConsoleOutput({
   onClearHistory,
   isMaximized = false,
   onToggleMaximize,
+  isMinimized = false,
+  onToggleMinimize,
 }: ConsoleOutputProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<FilterLevel>('all');
@@ -360,6 +364,28 @@ export function ConsoleOutput({
 
         {displayedEntries.length > 0 && (
           <CopyButton getText={getAllText} title="Copy All" />
+        )}
+
+        {/* Minimize / restore panel */}
+        {onToggleMinimize && (
+          <button
+            className={`console-header-btn ${isMinimized ? 'console-header-btn-active' : ''}`}
+            onClick={onToggleMinimize}
+            title={isMinimized ? 'Restore split view' : 'Minimize console'}
+            aria-label={isMinimized ? 'Restore split view' : 'Minimize console'}
+          >
+            {isMinimized ? (
+              /* Upward arrow / Restore */
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 10 8 4 12 10" />
+              </svg>
+            ) : (
+              /* Downward arrow / Minimize */
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 6 8 12 12 6" />
+              </svg>
+            )}
+          </button>
         )}
 
         {/* Maximize / restore panel */}
