@@ -8,6 +8,8 @@ interface ResizableSplitProps {
   onRatioChange?: (ratio: number) => void;
   minLeft?: number;      // px
   minRight?: number;     // px
+  isMobile?: boolean;
+  isMobileExpanded?: boolean;
 }
 
 export function ResizableSplit({
@@ -18,6 +20,8 @@ export function ResizableSplit({
   onRatioChange,
   minLeft = 280,
   minRight = 240,
+  isMobile = false,
+  isMobileExpanded = false,
 }: ResizableSplitProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [internalRatio, setInternalRatio] = useState(initialRatio);
@@ -27,16 +31,7 @@ export function ResizableSplit({
     onRatioChange?.(r);
   }, [onRatioChange]);
 
-  const [isMobile, setIsMobile] = useState(false);
   const isDragging = useRef(false);
-
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 768px)');
-    const update = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile(e.matches);
-    update(mql);
-    mql.addEventListener('change', update);
-    return () => mql.removeEventListener('change', update);
-  }, []);
 
   const startDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -89,29 +84,50 @@ export function ResizableSplit({
   return (
     <div
       ref={containerRef}
-      className={`split-container ${isMobile ? 'split-vertical' : 'split-horizontal'}`}
-      style={{
+      className={`split-container ${isMobile ? 'split-mobile' : 'split-horizontal'}`}
+      style={isMobile ? {
+        display: 'block',
+        position: 'relative',
+        height: '100%',
+        width: '100%',
+        overflow: 'hidden',
+      } : {
         display: 'grid',
-        ...(isMobile 
-          ? { gridTemplateRows: `${leftPct} 5px ${rightPct}`, gridTemplateColumns: '1fr' }
-          : { gridTemplateColumns: `${leftPct} 5px ${rightPct}`, gridTemplateRows: '100%' }
-        ),
+        gridTemplateColumns: `${leftPct} 5px ${rightPct}`,
+        gridTemplateRows: '100%',
         height: '100%',
         width: '100%',
         overflow: 'hidden',
       }}
     >
-      <div className="split-pane split-left">{left}</div>
-      <div
-        className="split-divider"
-        onMouseDown={startDrag}
-        role="separator"
-        aria-label="Resize panels"
-        title="Drag to resize"
+      <div className="split-pane split-left" style={isMobile ? { height: '100%', width: '100%' } : {}}>{left}</div>
+      {!isMobile && (
+        <div
+          className="split-divider"
+          onMouseDown={startDrag}
+          role="separator"
+          aria-label="Resize panels"
+          title="Drag to resize"
+        >
+          <div className="divider-handle" />
+        </div>
+      )}
+      <div 
+        className="split-pane split-right" 
+        style={isMobile ? {
+           position: 'absolute',
+           bottom: 0,
+           left: 0,
+           right: 0,
+           height: isMobileExpanded ? '75%' : '40px',
+           transition: 'height 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+           zIndex: 10,
+           boxShadow: '0 -4px 12px rgba(0,0,0,0.15)',
+           background: 'var(--bg-raised)',
+        } : {}}
       >
-        <div className="divider-handle" />
+        {right}
       </div>
-      <div className="split-pane split-right">{right}</div>
     </div>
   );
 }

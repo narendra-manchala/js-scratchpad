@@ -106,8 +106,8 @@ export default function App() {
   const [charCount, setCharCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const [isDragging, setIsDragging] = useState(false);
-  const [isMaximized, setIsMaximized] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileExpanded, setIsMobileExpanded] = useState(false);
   const [ataState, setAtaState] = useState<AtaState>({ status: 'idle' });
 
   // ── Execution history ────────────────────────────────────────────────────────
@@ -116,6 +116,14 @@ export default function App() {
 
   // ── Runner ──────────────────────────────────────────────────────────────────
   const { entries, isRunning, execTime, runCode, clearConsole, stopCode } = useCodeRunner();
+
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 768px)');
+    const update = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile(e.matches);
+    update(mql);
+    mql.addEventListener('change', update);
+    return () => mql.removeEventListener('change', update);
+  }, []);
 
   // ── Editor refs ─────────────────────────────────────────────────────────────
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -500,7 +508,6 @@ export default function App() {
       if (mod && e.key === 'k') { e.preventDefault(); setShowPalette(p => !p); }
       if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); setShowShortcuts(p => !p); }
       if (mod && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); clearConsole(); }
-      if (mod && (e.key === 'j' || e.key === 'J')) { e.preventDefault(); setIsMaximized(m => !m); }
       if (mod && (e.key === 'w' || e.key === 'W') && !e.shiftKey) {
         if (filesRef.current.length > 1) {
           e.preventDefault();
@@ -626,8 +633,6 @@ export default function App() {
     { id: 'run-sel',   label: 'Run Selection Only',        group: 'Execution', shortcut: `${isMac ? '⌘⇧' : 'Ctrl⇧'}↵`, action: () => handleRun(true) },
     { id: 'stop',      label: 'Stop Execution',             group: 'Execution', action: stopCode },
     { id: 'clear',     label: 'Clear Console',              group: 'Console',   shortcut: `${isMac ? '⌘' : 'Ctrl'}L`, action: clearConsole },
-    { id: 'toggle-max', label: isMaximized ? 'Restore Split View' : 'Maximize Console', group: 'Console', shortcut: `${isMac ? '⌘' : 'Ctrl'}J`, action: () => { setIsMaximized(m => !m); setIsMinimized(false); } },
-    { id: 'toggle-min', label: isMinimized ? 'Restore Split View' : 'Minimize Console', group: 'Console', action: () => { setIsMinimized(m => !m); setIsMaximized(false); } },
     { id: 'save',      label: settings.formatOnSave ? 'Save & Format Document' : 'Save Document', group: 'Editor', shortcut: `${isMac ? '⌘' : 'Ctrl'}S`, action: () => handleSaveRef.current() },
     { id: 'format',    label: 'Format Code',                group: 'Editor',    shortcut: `${isMac ? '⌘⇧' : 'Ctrl⇧'}F`, action: handleFormat },
     { id: 'autodetect', label: 'Detect File Type from Code', group: 'Editor',   action: handleAutoDetect },
@@ -643,7 +648,7 @@ export default function App() {
     { id: 'shortcuts', label: 'Keyboard Shortcuts',         group: 'Help',      shortcut: `${isMac ? '⌘' : 'Ctrl'}/`, action: () => setShowShortcuts(true) },
     ...files.map((f, i) => ({ id: `switch-${f.id}`, label: `Switch to ${f.name}`, group: 'Files', shortcut: i < 9 ? `${isMac ? '⌘' : 'Ctrl'}${i + 1}` : undefined, action: () => handleSwitchFile(f.id) })),
     ...PRESETS.map(p => ({ id: `preset-${p.id}`, label: `Load preset: ${p.label}`, group: 'Presets', action: () => handlePresetSelect(p) })),
-  ], [files, activeId, autoRun, isMaximized, isMinimized, settings, handleRun, stopCode, handleFormat, clearConsole, handleAutoDetect, handleLanguageChange, handleCreateFile, handleDownloadFile, handleShare, handleExportZip, handleSwitchFile, handlePresetSelect, handleSettingsChange]);
+  ], [files, activeId, autoRun, settings, handleRun, stopCode, handleFormat, clearConsole, handleAutoDetect, handleLanguageChange, handleCreateFile, handleDownloadFile, handleShare, handleExportZip, handleSwitchFile, handlePresetSelect, handleSettingsChange]);
 
   // ── Editor pane (stable — never remounts) ────────────────────────────────────
   const activeTheme = useMemo(() => {
@@ -756,25 +761,16 @@ export default function App() {
               clearOnRun={settings.clearOnRun}
               onToggleClearOnRun={() => handleSettingsChange({ ...settings, clearOnRun: !settings.clearOnRun })}
               onClearHistory={() => { setRunHistory([]); setHistoryIdx(-1); }}
-              isMaximized={isMaximized}
-              onToggleMaximize={() => {
-                setIsMaximized(m => !m);
-                setIsMinimized(false);
-              }}
-              isMinimized={isMinimized}
-              onToggleMinimize={() => {
-                setIsMinimized(m => !m);
-                setIsMaximized(false);
-              }}
+              isMobile={isMobile}
+              isMobileExpanded={isMobileExpanded}
+              onToggleMobileExpand={() => setIsMobileExpanded(e => !e)}
             />
           }
-          ratio={isMaximized ? 0.05 : isMinimized ? 0.95 : 0.56}
-          onRatioChange={r => {
-            if (isMaximized && r > 0.15) setIsMaximized(false);
-            if (isMinimized && r < 0.85) setIsMinimized(false);
-          }}
+          ratio={0.56}
           minLeft={60}
-          minRight={isMinimized ? 40 : 240}
+          minRight={240}
+          isMobile={isMobile}
+          isMobileExpanded={isMobileExpanded}
         />
       </main>
 

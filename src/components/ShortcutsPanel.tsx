@@ -7,7 +7,6 @@ const GROUPS = [
       { keys: ['⌘', '↵'], desc: 'Run code (or selection)' },
       { keys: ['⌘', '⇧', '↵'], desc: 'Run selected code only' },
       { keys: ['⌘', 'L'], desc: 'Clear console' },
-      { keys: ['⌘', 'J'], desc: 'Maximize / restore console' },
     ],
   },
   {

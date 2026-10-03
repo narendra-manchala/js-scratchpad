@@ -20,10 +20,9 @@ interface ConsoleOutputProps {
   clearOnRun?: boolean;
   onToggleClearOnRun?: () => void;
   onClearHistory?: () => void;
-  isMaximized?: boolean;
-  onToggleMaximize?: () => void;
-  isMinimized?: boolean;
-  onToggleMinimize?: () => void;
+  isMobile?: boolean;
+  isMobileExpanded?: boolean;
+  onToggleMobileExpand?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -252,10 +251,9 @@ export function ConsoleOutput({
   clearOnRun = true,
   onToggleClearOnRun,
   onClearHistory,
-  isMaximized = false,
-  onToggleMaximize,
-  isMinimized = false,
-  onToggleMinimize,
+  isMobile = false,
+  isMobileExpanded = false,
+  onToggleMobileExpand,
 }: ConsoleOutputProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<FilterLevel>('all');
@@ -366,51 +364,23 @@ export function ConsoleOutput({
           <CopyButton getText={getAllText} title="Copy All" />
         )}
 
-        {/* Minimize / restore panel */}
-        {onToggleMinimize && (
+        {/* Mobile expand / collapse panel */}
+        {isMobile && onToggleMobileExpand && (
           <button
-            className={`console-header-btn ${isMinimized ? 'console-header-btn-active' : ''}`}
-            onClick={onToggleMinimize}
-            title={isMinimized ? 'Restore split view' : 'Minimize console'}
-            aria-label={isMinimized ? 'Restore split view' : 'Minimize console'}
+            className={`console-header-btn ${isMobileExpanded ? 'console-header-btn-active' : ''}`}
+            onClick={onToggleMobileExpand}
+            title={isMobileExpanded ? 'Collapse console' : 'Expand console'}
+            aria-label={isMobileExpanded ? 'Collapse console' : 'Expand console'}
           >
-            {isMinimized ? (
-              /* Upward arrow / Restore */
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="4 10 8 4 12 10" />
-              </svg>
-            ) : (
-              /* Downward arrow / Minimize */
+            {isMobileExpanded ? (
+              /* Downward arrow / Collapse */
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="4 6 8 12 12 6" />
               </svg>
-            )}
-          </button>
-        )}
-
-        {/* Maximize / restore panel */}
-        {onToggleMaximize && (
-          <button
-            className={`console-header-btn ${isMaximized ? 'console-header-btn-active' : ''}`}
-            onClick={onToggleMaximize}
-            title={isMaximized ? `Restore split view (${isMac ? '⌘' : 'Ctrl'}J)` : `Maximize console (${isMac ? '⌘' : 'Ctrl'}J)`}
-            aria-label={isMaximized ? 'Restore split view' : 'Maximize console'}
-          >
-            {isMaximized ? (
-              /* Inward / Collapse icon (restore split) */
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="14 7 10 7 10 3" />
-                <line x1="15" y1="2" x2="10" y2="7" />
-                <polyline points="2 9 6 9 6 13" />
-                <line x1="1" y1="14" x2="6" y2="9" />
-              </svg>
             ) : (
-              /* Outward / Expand icon (maximize) */
+              /* Upward arrow / Expand */
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="10 2 14 2 14 6" />
-                <line x1="14" y1="2" x2="9" y2="7" />
-                <polyline points="6 14 2 14 2 10" />
-                <line x1="2" y1="14" x2="7" y2="9" />
+                <polyline points="4 10 8 4 12 10" />
               </svg>
             )}
           </button>
