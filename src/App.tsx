@@ -110,12 +110,38 @@ export default function App() {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
   const [ataState, setAtaState] = useState<AtaState>({ status: 'idle' });
 
+  // ── Packages ────────────────────────────────────────────────────────────────
+  const [packages, setPackages] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('sc_packages');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleAddPackage = useCallback((pkg: string) => {
+    setPackages(prev => {
+      const next = [...new Set([...prev, pkg])];
+      localStorage.setItem('sc_packages', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleRemovePackage = useCallback((pkg: string) => {
+    setPackages(prev => {
+      const next = prev.filter(p => p !== pkg);
+      localStorage.setItem('sc_packages', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   // ── Execution history ────────────────────────────────────────────────────────
   const [runHistory, setRunHistory] = useState<HistoryEntry[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
 
   // ── Runner ──────────────────────────────────────────────────────────────────
-  const { entries, isRunning, execTime, runCode, clearConsole, stopCode } = useCodeRunner();
+  const { entries, isRunning, execTime, runCode, clearConsole, stopCode } = useCodeRunner(packages);
 
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 768px)');
@@ -731,6 +757,9 @@ export default function App() {
         shareStatus={shareStatus}
         onExportGist={handleExportGist}
         gistStatus={gistStatus}
+        packages={packages}
+        onAddPackage={handleAddPackage}
+        onRemovePackage={handleRemovePackage}
       />
 
       <TabBar

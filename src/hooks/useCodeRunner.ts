@@ -38,7 +38,7 @@ interface UseCodeRunnerResult {
   stopCode: () => void;
 }
 
-export function useCodeRunner(): UseCodeRunnerResult {
+export function useCodeRunner(packages: string[] = []): UseCodeRunnerResult {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [execTime, setExecTime] = useState<number | null>(null);
@@ -144,7 +144,7 @@ export function useCodeRunner(): UseCodeRunnerResult {
       terminateWorker();
     });
 
-    worker.postMessage({ cmd: 'run', code });
+    worker.postMessage({ cmd: 'run', code, packages });
   }, [appendEntry, terminateWorker]);
 
   return { entries, isRunning, execTime, runCode, clearConsole, stopCode };

@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import type { CodePreset } from '../lib/presets';
 import type { Settings } from '../lib/settings';
 import { SettingsPanel } from './SettingsPanel';
+import { PackagesPanel } from './PackagesPanel';
 
 interface ToolbarProps {
   isRunning: boolean;
@@ -25,6 +26,9 @@ interface ToolbarProps {
   shareStatus: 'idle' | 'copied' | 'error';
   onExportGist: () => void;
   gistStatus: 'idle' | 'exporting' | 'copied' | 'error';
+  packages: string[];
+  onAddPackage: (pkg: string) => void;
+  onRemovePackage: (pkg: string) => void;
 }
 
 const TIMEOUT_OPTIONS = [
@@ -39,10 +43,13 @@ export function Toolbar({
   timeoutMs, onTimeoutChange, presets, onPresetSelect, isMac,
   autoRun, onAutoRunToggle, onOpenPalette, onOpenShortcuts,
   settings, onSettingsChange, shareStatus, onExportGist, gistStatus,
+  packages, onAddPackage, onRemovePackage,
 }: ToolbarProps) {
   const keyHint = isMac ? '⌘↵' : 'Ctrl↵';
   const [showSettings, setShowSettings] = useState(false);
+  const [showPackages, setShowPackages] = useState(false);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  const packagesBtnRef = useRef<HTMLButtonElement>(null);
 
   return (
     <header className="toolbar">
@@ -176,6 +183,31 @@ export function Toolbar({
             <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8z"/>
           </svg>
         </button>
+
+        <div className="toolbar-sep" />
+
+        {/* Packages */}
+        <div style={{ position: 'relative' }}>
+          <button
+            id="btn-packages"
+            ref={packagesBtnRef}
+            className={`btn btn-icon btn-secondary ${showPackages ? 'btn-icon-active' : ''}`}
+            onClick={() => setShowPackages(s => !s)}
+            title="Packages"
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+              <path d="M7.64 1.253a.75.75 0 0 1 .72 0l6.25 3.5a.75.75 0 0 1 .39.654v5.186a.75.75 0 0 1-.39.654l-6.25 3.5a.75.75 0 0 1-.72 0l-6.25-3.5a.75.75 0 0 1-.39-.654V5.407a.75.75 0 0 1 .39-.654l6.25-3.5zm-.89 1.4L1.75 5.513v4.974L6.75 13.29V8.649c0-.414.336-.75.75-.75h.001c.414 0 .75.336.75.75v4.641l5-2.803V5.513L8.25 2.654v.1c0 .414-.336.75-.75.75-.414 0-.75-.336-.75-.75v-.1z" />
+            </svg>
+          </button>
+          <PackagesPanel
+            open={showPackages}
+            onClose={() => setShowPackages(false)}
+            anchorRef={packagesBtnRef}
+            packages={packages}
+            onAddPackage={onAddPackage}
+            onRemovePackage={onRemovePackage}
+          />
+        </div>
 
         {/* Settings */}
         <div style={{ position: 'relative' }}>

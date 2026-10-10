@@ -21,6 +21,7 @@ type WorkerOutboundMessage =
 type WorkerInboundMessage = {
   cmd: 'run';
   code: string;
+  packages: string[];
 };
 
 // Helper: create AsyncFunction constructor
@@ -107,12 +108,17 @@ const originalPerformance = {
 };
 
 // ── TypeScript → JavaScript transpilation ─────────────────────────────────────
-function rewriteImports(code: string): string {
+function rewriteImports(code: string, packages: string[]): string {
   // Regex to match ES6 imports and convert to dynamic imports via esm.sh
   const importRegex = /import\s+(?:([\w*{},\s]+)\s+from\s+)?['"]([^'"]+)['"]\s*;?/g;
 
   return code.replace(importRegex, (match, clauses, pkg) => {
+    // Check if the package is installed (or is a valid URL/local path)
     if (!pkg.startsWith('http') && !pkg.startsWith('.') && !pkg.startsWith('/')) {
+      const isInstalled = packages.some(p => pkg === p || pkg.startsWith(p + '/'));
+      if (!isInstalled) {
+        throw new Error(`Package '${pkg}' is not installed. Please add it via the Packages menu.`);
+      }
       pkg = `https://esm.sh/${pkg}`;
     }
     
@@ -146,8 +152,8 @@ function rewriteImports(code: string): string {
   });
 }
 
-function transpile(tsCode: string): string {
-  const codeWithDynamicImports = rewriteImports(tsCode);
+function transpile(tsCode: string, packages: string[]): string {
+  const codeWithDynamicImports = rewriteImports(tsCode, packages);
   const { code } = transform(codeWithDynamicImports, {
     transforms: ['typescript'],
     jsxRuntime: 'classic',
@@ -188,7 +194,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
     }
 
     // Step 1: Strip TypeScript types → plain JavaScript
-    const jsCode = transpile(code);
+    const jsCode = transpile(code, event.data.packages || []);
 
     // Step 2: Wrap in async IIFE so top-level await works and return is captured
     const wrappedCode = `"use strict";\nconst __result = await (async () => {\n${jsCode}\n})();\n__result`;
