@@ -33,7 +33,7 @@ interface UseCodeRunnerResult {
   entries: LogEntry[];
   isRunning: boolean;
   execTime: number | null;
-  runCode: (code: string, timeoutMs: number, clearBeforeRun?: boolean) => void;
+  runCode: (code: string, timeoutMs: number, clearBeforeRun?: boolean, language?: string) => void;
   clearConsole: () => void;
   stopCode: () => void;
 }
@@ -79,7 +79,7 @@ export function useCodeRunner(packages: string[] = []): UseCodeRunnerResult {
     });
   }, [terminateWorker, appendEntry]);
 
-  const runCode = useCallback((code: string, timeoutMs: number, clearBeforeRun = true) => {
+  const runCode = useCallback((code: string, timeoutMs: number, clearBeforeRun = true, language?: string) => {
     terminateWorker();
     setIsRunning(true);
     setExecTime(null);
@@ -132,7 +132,7 @@ export function useCodeRunner(packages: string[] = []): UseCodeRunnerResult {
           if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
           setExecTime(msg.elapsed);
           setIsRunning(false);
-          terminateWorker();
+          // Keep worker alive for any late async calls; it will be terminated on next run, stopCode, or unmount.
           break;
       }
     });
@@ -144,7 +144,7 @@ export function useCodeRunner(packages: string[] = []): UseCodeRunnerResult {
       terminateWorker();
     });
 
-    worker.postMessage({ cmd: 'run', code, packages });
+    worker.postMessage({ cmd: 'run', code, packages, language });
   }, [appendEntry, terminateWorker]);
 
   return { entries, isRunning, execTime, runCode, clearConsole, stopCode };
