@@ -1,10 +1,10 @@
 /**
  * Heuristics-based file type detection for JS Scratchpad.
- * Detects whether a code snippet is JSON, TypeScript, or JavaScript.
+ * Detects whether a code snippet is JSON, TypeScript, JavaScript, or WAT.
  */
 
-export type DetectedFileType = 'js' | 'ts' | 'json';
-export type SupportedLanguage = 'javascript' | 'typescript' | 'json';
+export type DetectedFileType = 'js' | 'ts' | 'json' | 'wat';
+export type SupportedLanguage = 'javascript' | 'typescript' | 'json' | 'wat';
 
 /**
  * Strips comments and string literals so keywords inside comments/strings
@@ -44,7 +44,12 @@ export function detectFileType(code: string): DetectedFileType {
     }
   }
 
-  // 2. TypeScript check
+  // 2.5. WAT (WebAssembly Text Format) check
+  if (trimmed.startsWith('(module') || trimmed.includes('(func ') || trimmed.includes('(import ')) {
+    return 'wat';
+  }
+
+  // 3. TypeScript check
   const stripped = stripCommentsAndStrings(trimmed);
 
   const tsPatterns: RegExp[] = [
@@ -97,16 +102,18 @@ export function detectFileType(code: string): DetectedFileType {
 export function getLanguageFromFile(filename: string): SupportedLanguage {
   if (filename.endsWith('.json')) return 'json';
   if (filename.endsWith('.ts') || filename.endsWith('.tsx')) return 'typescript';
+  if (filename.endsWith('.wat') || filename.endsWith('.wasm')) return 'wat';
   return 'javascript';
 }
 
 /**
  * Maps a SupportedLanguage to file extension.
  */
-export function getExtFromLanguage(lang: SupportedLanguage): '.js' | '.ts' | '.json' {
+export function getExtFromLanguage(lang: SupportedLanguage): '.js' | '.ts' | '.json' | '.wat' {
   switch (lang) {
     case 'json': return '.json';
     case 'typescript': return '.ts';
+    case 'wat': return '.wat';
     default: return '.js';
   }
 }
@@ -116,6 +123,6 @@ export function getExtFromLanguage(lang: SupportedLanguage): '.js' | '.ts' | '.j
  */
 export function replaceFileExtension(filename: string, lang: SupportedLanguage): string {
   const ext = getExtFromLanguage(lang);
-  const baseName = filename.replace(/\.(js|ts|tsx|json)$/i, '');
+  const baseName = filename.replace(/\.(js|ts|tsx|json|wat|wasm)$/i, '');
   return `${baseName}${ext}`;
 }

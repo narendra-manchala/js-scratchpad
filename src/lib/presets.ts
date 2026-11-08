@@ -247,7 +247,67 @@ const typed = debounce((x: number, y: string) => console.log(x, y), 50);
 console.log('debounce<(x: number, y: string) => void>:', typed.toString().slice(0, 60) + '...');
 `,
   },
+  {
+    id: 'wasm-add-multiply',
+    label: '🔩 WebAssembly — Add & Multiply',
+    description: 'Basic WAT module with exported integer functions',
+    code: `;; WebAssembly Text Format (WAT)
+;; A simple module that exports two integer math functions.
+;; Hit Run — it compiles to WASM in-browser and prints the exports.
+
+(module
+  ;; add: (a: i32, b: i32) -> i32
+  (func $add (export "add") (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.add
+  )
+
+  ;; multiply: (a: i32, b: i32) -> i32
+  (func $multiply (export "multiply") (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.mul
+  )
+
+  ;; answer: () -> i32  (returns 42)
+  (func $answer (export "answer") (result i32)
+    i32.const 42
+  )
+)`,
+  },
+  {
+    id: 'wasm-fibonacci',
+    label: '🔩 WebAssembly — Fibonacci',
+    description: 'Recursive Fibonacci in WebAssembly Text Format',
+    code: `;; WebAssembly Text Format — Recursive Fibonacci
+;; Compiles & runs entirely in-browser via the native WebAssembly API.
+
+(module
+  (func $fib (export "fib") (param $n i32) (result i32)
+    local.get $n
+    i32.const 1
+    i32.le_s
+    if (result i32)
+      local.get $n
+    else
+      local.get $n
+      i32.const 1
+      i32.sub
+      call $fib
+
+      local.get $n
+      i32.const 2
+      i32.sub
+      call $fib
+
+      i32.add
+    end
+  )
+)`,
+  },
 ];
+
 
 export const DEFAULT_CODE = `// Welcome to JS Scratchpad ⚡
 // Press Cmd+Enter (or Ctrl+Enter) to run your code.

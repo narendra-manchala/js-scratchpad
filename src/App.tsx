@@ -38,6 +38,12 @@ declare global {
 
 const isMac = navigator.platform.toUpperCase().includes('MAC') || navigator.userAgent.includes('Mac');
 
+/** Map our SupportedLanguage to a Monaco-understood language ID */
+function toMonacoLang(lang: SupportedLanguage): string {
+  if (lang === 'wat') return 'plaintext';
+  return lang;
+}
+
 // ── Monaco base options (overridden by settings) ────────────────────────────
 const BASE_MONACO_OPTIONS: editor.IStandaloneEditorConstructionOptions = {
   fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
@@ -210,7 +216,8 @@ export default function App() {
     const ext = getExtFromLanguage(lang);
     
     const uri = monaco.Uri.parse(`file:///${file.id}${ext}`);
-    const model = monaco.editor.getModel(uri) || monaco.editor.createModel(file.code, lang, uri);
+    const monacoLang = toMonacoLang(lang);
+    const model = monaco.editor.getModel(uri) || monaco.editor.createModel(file.code, monacoLang, uri);
     modelMapRef.current.set(file.id, model);
     return model;
   }, []);
@@ -225,7 +232,7 @@ export default function App() {
 
     const model = modelMapRef.current.get(currentActiveId);
     if (model && monacoRef.current) {
-      monacoRef.current.editor.setModelLanguage(model, newLang);
+      monacoRef.current.editor.setModelLanguage(model, toMonacoLang(newLang));
     }
   }, []);
 
@@ -382,8 +389,9 @@ export default function App() {
     const model = modelMapRef.current.get(activeId);
     if (model) {
       const targetLang = getLanguageFromFile(activeFile.name);
-      if (model.getLanguageId() !== targetLang) {
-        monaco.editor.setModelLanguage(model, targetLang);
+      const monacoLang = toMonacoLang(targetLang);
+      if (model.getLanguageId() !== monacoLang) {
+        monaco.editor.setModelLanguage(model, monacoLang);
       }
     }
   }, [files, activeId]);
@@ -489,7 +497,10 @@ export default function App() {
     }
 
     setHistoryIdx(-1);
-    runCode(codeToRun, timeoutMs, settings.clearOnRun);
+    const currentLang = getLanguageFromFile(
+      (filesRef.current.find(f => f.id === activeIdRef.current) ?? filesRef.current[0]).name
+    );
+    runCode(codeToRun, timeoutMs, settings.clearOnRun, currentLang);
   }, [runCode, timeoutMs, settings.clearOnRun, settings.formatOnRun]);
 
   useEffect(() => {
@@ -665,6 +676,7 @@ export default function App() {
     { id: 'lang-js',   label: 'Change Language to JavaScript (.js)', group: 'Editor', action: () => handleLanguageChange('javascript') },
     { id: 'lang-ts',   label: 'Change Language to TypeScript (.ts)', group: 'Editor', action: () => handleLanguageChange('typescript') },
     { id: 'lang-json', label: 'Change Language to JSON (.json)',     group: 'Editor', action: () => handleLanguageChange('json') },
+    { id: 'lang-wat',  label: 'Change Language to WebAssembly Text (.wat)', group: 'Editor', action: () => handleLanguageChange('wat') },
     { id: 'new-file',  label: 'New File',                   group: 'Files',     action: handleCreateFile },
     { id: 'download',  label: 'Download Active File',       group: 'Files',     action: () => handleDownloadFile(activeId) },
     { id: 'share',     label: 'Copy Shareable Link',        group: 'Files',     action: handleShare },
@@ -684,7 +696,12 @@ export default function App() {
     return settings.theme;
   }, [settings.theme]);
 
-  const activeLanguage = useMemo(() => getLanguageFromFile(activeFile.name), [activeFile.name]);
+  const activeLanguage = useMemo(() => {
+    const lang = getLanguageFromFile(activeFile.name);
+    // Monaco doesn't have a built-in WAT language — map it to 'plaintext' for the editor
+    // but we still track it as 'wat' for the runner
+    return lang;
+  }, [activeFile.name]);
 
   const editorPane = useMemo(() => (
     <div

@@ -18,6 +18,7 @@ const LANGUAGE_LABELS: Record<SupportedLanguage, { label: string; ext: string }>
   javascript: { label: 'JavaScript', ext: '.js' },
   typescript: { label: 'TypeScript', ext: '.ts' },
   json: { label: 'JSON', ext: '.json' },
+  wat: { label: 'WebAssembly Text', ext: '.wat' },
 };
 
 export function StatusBar({
@@ -73,7 +74,7 @@ export function StatusBar({
         {showLangMenu && (
           <div className="status-lang-menu">
             <div className="status-lang-menu-header">Select Language</div>
-            {(['javascript', 'typescript', 'json'] as SupportedLanguage[]).map(lang => (
+            {(['javascript', 'typescript', 'json', 'wat'] as SupportedLanguage[]).map(lang => (
               <button
                 key={lang}
                 className={`status-lang-option ${language === lang ? 'active' : ''}`}

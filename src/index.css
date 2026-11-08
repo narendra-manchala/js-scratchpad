@@ -2138,6 +2138,11 @@ body.theme-light .drag-overlay-inner {
   color: #34d399;
 }
 
+.status-lang-badge.status-lang-wat {
+  background: rgba(101, 77, 255, 0.2);
+  color: #a78bfa;
+}
+
 .status-lang-menu {
   position: absolute;
   bottom: calc(100% + 6px);
