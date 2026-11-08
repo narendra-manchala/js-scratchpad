@@ -9,7 +9,7 @@
  * - Sends structured messages back to the main thread
  */
 
-import * as esbuild from 'esbuild-wasm';
+import { transform } from 'sucrase';
 import { parse } from 'acorn';
 import { serialize, serializeArgs, type SerializedValue } from './lib/serializer';
 
@@ -26,19 +26,6 @@ type WorkerInboundMessage = {
   packages: string[];
   language?: string; // 'javascript' | 'typescript' | 'json' | 'wat'
 };
-
-// ── esbuild-wasm initialisation ───────────────────────────────────────────────
-let esbuildReady: Promise<void> | null = null;
-
-function getEsbuild(): Promise<void> {
-  if (!esbuildReady) {
-    esbuildReady = esbuild.initialize({
-      wasmURL: 'https://unpkg.com/esbuild-wasm/esbuild.wasm',
-      worker: false, // we are already inside a worker
-    });
-  }
-  return esbuildReady;
-}
 
 // Helper: create AsyncFunction constructor
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
@@ -124,8 +111,14 @@ const originalPerformance = {
 };
 
 // ── Async Execution Tracking (Timers, Intervals, Fetch, Rejections) ───────────
+let timerSeq = 0;
 const activeTimers = new Set<number>();
+const realToCustomTimer = new Map<number, number>();
+
+let intervalSeq = 0;
 const activeIntervals = new Set<number>();
+const realToCustomInterval = new Map<number, number>();
+
 let activeFetches = 0;
 let isSyncExecutionDone = false;
 let hasSentDone = false;
@@ -153,9 +146,11 @@ function checkDone() {
 
 function patchAsyncApis() {
   (self as any).setTimeout = (handler: TimerHandler, timeout?: number, ...args: any[]) => {
-    let id: number;
+    const customId = ++timerSeq;
+    activeTimers.add(customId);
+
     const wrappedHandler = (...cbArgs: any[]) => {
-      activeTimers.delete(id);
+      activeTimers.delete(customId);
       try {
         if (typeof handler === 'function') {
           handler(...cbArgs);
@@ -173,19 +168,28 @@ function patchAsyncApis() {
         checkDone();
       }
     };
-    id = originalSetTimeout(wrappedHandler, timeout, ...args) as unknown as number;
-    activeTimers.add(id);
-    return id;
+
+    const realId = originalSetTimeout(wrappedHandler, timeout, ...args) as unknown as number;
+    realToCustomTimer.set(realId, customId);
+    return realId;
   };
 
-  (self as any).clearTimeout = (id?: number) => {
-    if (id !== undefined) activeTimers.delete(id);
-    originalClearTimeout(id);
+  (self as any).clearTimeout = (realId?: number) => {
+    if (realId !== undefined) {
+      const customId = realToCustomTimer.get(realId);
+      if (customId !== undefined) {
+        activeTimers.delete(customId);
+        realToCustomTimer.delete(realId);
+      }
+    }
+    originalClearTimeout(realId);
     checkDone();
   };
 
   (self as any).setInterval = (handler: TimerHandler, timeout?: number, ...args: any[]) => {
-    let id: number;
+    const customId = ++intervalSeq;
+    activeIntervals.add(customId);
+
     const wrappedHandler = (...cbArgs: any[]) => {
       try {
         if (typeof handler === 'function') {
@@ -202,14 +206,21 @@ function patchAsyncApis() {
         });
       }
     };
-    id = originalSetInterval(wrappedHandler, timeout, ...args) as unknown as number;
-    activeIntervals.add(id);
-    return id;
+
+    const realId = originalSetInterval(wrappedHandler, timeout, ...args) as unknown as number;
+    realToCustomInterval.set(realId, customId);
+    return realId;
   };
 
-  (self as any).clearInterval = (id?: number) => {
-    if (id !== undefined) activeIntervals.delete(id);
-    originalClearInterval(id);
+  (self as any).clearInterval = (realId?: number) => {
+    if (realId !== undefined) {
+      const customId = realToCustomInterval.get(realId);
+      if (customId !== undefined) {
+        activeIntervals.delete(customId);
+        realToCustomInterval.delete(realId);
+      }
+    }
+    originalClearInterval(realId);
     checkDone();
   };
 
@@ -299,29 +310,15 @@ function rewriteImports(code: string, packages: string[]): string {
   });
 }
 
-// ── TypeScript / JavaScript transpilation via esbuild-wasm ────────────────────
-async function transpile(tsCode: string, packages: string[], isTs: boolean): Promise<string> {
-  await getEsbuild();
-
-  // Rewrite npm imports first, then hand off to esbuild for TS stripping
-  let source = tsCode;
-  try {
-    source = rewriteImports(tsCode, packages);
-  } catch (e) {
-    throw e;
-  }
-
-  const result = await esbuild.transform(source, {
-    loader: isTs ? 'ts' : 'js',
-    target: 'esnext',
-    format: 'esm',
-    // Keep names for readable stack traces
-    keepNames: true,
-    // No minification — this is a dev environment
-    minify: false,
+// ── TypeScript / JavaScript transpilation via Sucrase (fast, offline) ─────────
+function transpile(tsCode: string, packages: string[]): string {
+  const source = rewriteImports(tsCode, packages);
+  const { code } = transform(source, {
+    transforms: ['typescript', 'jsx'],
+    jsxRuntime: 'classic',
+    preserveDynamicImport: true,
   });
-
-  return result.code;
+  return code;
 }
 
 // ── WAT (WebAssembly Text Format) runner ──────────────────────────────────────
@@ -449,17 +446,17 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
       }
     }
 
-    // ── JS / TS path — esbuild-wasm ─────────────────────────────────────────
+    // ── JS / TS path — Sucrase (instant, offline) ──────────────────────────
     runStartTime = startTime;
     isSyncExecutionDone = false;
     hasSentDone = false;
     activeTimers.clear();
+    realToCustomTimer.clear();
     activeIntervals.clear();
+    realToCustomInterval.clear();
     activeFetches = 0;
 
-    const isTs = language === 'typescript' || (!language && /[:?<>]\s*\w|interface\s+\w|type\s+\w+\s*=/.test(code));
-
-    let jsCode = await transpile(code, packages, isTs);
+    let jsCode = transpile(code, packages);
     jsCode = autoReturnLastExpression(jsCode);
 
     // Wrap in async IIFE so top-level await works and return is captured
