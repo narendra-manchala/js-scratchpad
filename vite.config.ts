@@ -1,9 +1,55 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+function devApiMockPlugin(): Plugin {
+  const devDb = new Map<string, any>();
+  return {
+    name: 'dev-api-mock',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = new URL(req.url || '', 'http://localhost');
+        if (url.pathname === '/api/share' && req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const data = JSON.parse(body);
+              const id = Math.random().toString(36).substring(2, 10);
+              const snippet = { id, ...data, createdAt: Date.now() };
+              devDb.set(id, snippet);
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ id, path: `/s/${id}` }));
+            } catch {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: 'Invalid JSON' }));
+            }
+          });
+          return;
+        }
+
+        if (url.pathname === '/api/get' && req.method === 'GET') {
+          const id = url.searchParams.get('id');
+          if (!id || !devDb.has(id)) {
+            res.statusCode = 404;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'Snippet not found' }));
+            return;
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ snippet: devDb.get(id) }));
+          return;
+        }
+
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
+    devApiMockPlugin(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',

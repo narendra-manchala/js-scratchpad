@@ -19,7 +19,14 @@ import {
   deleteFile, duplicateFile, makeFile, type ScFile,
 } from './lib/files';
 import { loadSettings, saveSettings, type Settings } from './lib/settings';
-import { getShareableUrl, getSharedCodeFromUrl, clearShareUrl } from './lib/share';
+import {
+  createShareLink,
+  fetchSharedSnippet,
+  getSharedIdFromUrl,
+  getShareableUrl,
+  getSharedCodeFromUrl,
+  clearShareUrl,
+} from './lib/share';
 import { exportToGist } from './lib/gist';
 import { acquireTypes, subscribeAta, type AtaState } from './lib/ata';
 import {
@@ -178,6 +185,35 @@ export default function App() {
 
   // Subscribe to ATA updates
   useEffect(() => subscribeAta(setAtaState), []);
+
+  // ── Load shared snippet from URL (/s/:id) ──────────────────────────────────
+  useEffect(() => {
+    const sharedId = getSharedIdFromUrl();
+    if (!sharedId) return;
+
+    fetchSharedSnippet(sharedId).then(snippet => {
+      if (!snippet || !Array.isArray(snippet.files) || snippet.files.length === 0) {
+        return;
+      }
+      setFiles(snippet.files);
+      if (snippet.packages && snippet.packages.length > 0) {
+        setPackages(snippet.packages);
+        localStorage.setItem('sc_packages', JSON.stringify(snippet.packages));
+      }
+      const targetActiveId = snippet.activeId && snippet.files.some(f => f.id === snippet.activeId)
+        ? snippet.activeId
+        : snippet.files[0].id;
+      setActiveId(targetActiveId);
+
+      const file = snippet.files.find(f => f.id === targetActiveId);
+      if (file && editorRef.current) {
+        const model = modelMapRef.current.get(file.id);
+        if (model && !model.isDisposed()) {
+          model.setValue(file.code);
+        }
+      }
+    });
+  }, []);
 
   // ── Save files (debounced) ───────────────────────────────────────────────────
   useEffect(() => {
@@ -576,16 +612,20 @@ export default function App() {
   }, [activeId]);
 
   const handleShare = useCallback(async () => {
-    const code = editorRef.current?.getValue() ?? activeFile.code;
-    const url = getShareableUrl(code);
+    const currentCode = editorRef.current?.getValue();
+    const currentFiles = currentCode !== undefined
+      ? updateFileCode(files, activeId, currentCode)
+      : files;
+
     try {
+      const url = await createShareLink(currentFiles, packages, activeId);
       await navigator.clipboard.writeText(url);
       setShareStatus('copied');
     } catch {
       setShareStatus('error');
     }
     setTimeout(() => setShareStatus('idle'), 2000);
-  }, [activeFile.code]);
+  }, [files, packages, activeId]);
 
   const handleExportGist = useCallback(async () => {
     if (!settings.githubToken) {
