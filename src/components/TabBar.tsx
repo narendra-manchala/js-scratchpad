@@ -17,6 +17,7 @@ interface TabBarProps {
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDownload: (id: string) => void;
+  onShare?: (id: string) => void;
 }
 
 interface TabProps {
@@ -27,6 +28,7 @@ interface TabProps {
   onDelete: () => void;
   onDuplicate: () => void;
   onDownload: () => void;
+  onShare?: () => void;
   canDelete: boolean;
 }
 
@@ -39,6 +41,7 @@ function Tab({
   onDelete,
   onDuplicate,
   onDownload,
+  onShare,
   canDelete,
 }: TabProps) {
   const [editing, setEditing] = useState(false);
@@ -168,6 +171,12 @@ function Tab({
             <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14H2.75zm4.5-9.19V8.25a.75.75 0 0 0 1.5 0V4.81l1.22 1.22a.75.75 0 1 0 1.06-1.06l-2.5-2.5a.75.75 0 0 0-1.06 0l-2.5 2.5a.75.75 0 1 0 1.06 1.06l1.22-1.22z"/></svg>
             Download .ts
           </button>
+          {onShare && (
+            <button className="ctx-item" onClick={() => { setCtxPos(null); onShare(); }}>
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 .75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25zm-4.69 9.64a2 2 0 0 1 0-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83 0z"/></svg>
+              Share this file
+            </button>
+          )}
           <div className="ctx-sep" />
           <button
             className="ctx-item ctx-item-danger"
@@ -209,6 +218,7 @@ export function TabBar({
   onDelete,
   onDuplicate,
   onDownload,
+  onShare,
 }: TabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -257,6 +267,7 @@ export function TabBar({
             onDelete={() => onDelete(file.id)}
             onDuplicate={() => onDuplicate(file.id)}
             onDownload={() => onDownload(file.id)}
+            onShare={() => onShare?.(file.id)}
             canDelete={files.length > 1}
           />
         ))}

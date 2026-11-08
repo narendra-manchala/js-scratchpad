@@ -6,7 +6,7 @@ import type { editor, typescript } from 'monaco-editor';
 import JSZip from 'jszip';
 import { useCodeRunner, type HistoryEntry } from './hooks/useCodeRunner';
 import { ConsoleOutput } from './components/ConsoleOutput';
-import { Toolbar } from './components/Toolbar';
+import { Toolbar, type ShareStatus } from './components/Toolbar';
 import { ResizableSplit } from './components/ResizableSplit';
 import { TabBar } from './components/TabBar';
 import { StatusBar } from './components/StatusBar';
@@ -113,7 +113,7 @@ export default function App() {
   // ── UI state ────────────────────────────────────────────────────────────────
   const [showPalette, setShowPalette] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [shareStatus, setShareStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [shareStatus, setShareStatus] = useState<ShareStatus>('idle');
   const [gistStatus, setGistStatus] = useState<'idle' | 'exporting' | 'copied' | 'error'>('idle');
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [charCount, setCharCount] = useState(0);
@@ -195,21 +195,44 @@ export default function App() {
       if (!snippet || !Array.isArray(snippet.files) || snippet.files.length === 0) {
         return;
       }
-      setFiles(snippet.files);
-      if (snippet.packages && snippet.packages.length > 0) {
-        setPackages(snippet.packages);
-        localStorage.setItem('sc_packages', JSON.stringify(snippet.packages));
-      }
-      const targetActiveId = snippet.activeId && snippet.files.some(f => f.id === snippet.activeId)
-        ? snippet.activeId
-        : snippet.files[0].id;
-      setActiveId(targetActiveId);
 
-      const file = snippet.files.find(f => f.id === targetActiveId);
-      if (file && editorRef.current) {
-        const model = modelMapRef.current.get(file.id);
-        if (model && !model.isDisposed()) {
-          model.setValue(file.code);
+      if (snippet.type === 'file') {
+        // Single file share: add to current workspace and switch to it
+        const sharedFile = snippet.files[0];
+        setFiles(prev => {
+          const existingIdx = prev.findIndex(f => f.name === sharedFile.name);
+          if (existingIdx !== -1) {
+            const next = [...prev];
+            next[existingIdx] = sharedFile;
+            return next;
+          }
+          return [sharedFile, ...prev];
+        });
+        setActiveId(sharedFile.id);
+        if (editorRef.current) {
+          const model = modelMapRef.current.get(sharedFile.id);
+          if (model && !model.isDisposed()) {
+            model.setValue(sharedFile.code);
+          }
+        }
+      } else {
+        // Project share: restore entire workspace & packages
+        setFiles(snippet.files);
+        if (snippet.packages && snippet.packages.length > 0) {
+          setPackages(snippet.packages);
+          localStorage.setItem('sc_packages', JSON.stringify(snippet.packages));
+        }
+        const targetActiveId = snippet.activeId && snippet.files.some(f => f.id === snippet.activeId)
+          ? snippet.activeId
+          : snippet.files[0].id;
+        setActiveId(targetActiveId);
+
+        const file = snippet.files.find(f => f.id === targetActiveId);
+        if (file && editorRef.current) {
+          const model = modelMapRef.current.get(file.id);
+          if (model && !model.isDisposed()) {
+            model.setValue(file.code);
+          }
         }
       }
     });
@@ -611,21 +634,44 @@ export default function App() {
     if (model && !model.isDisposed()) model.setValue(code);
   }, [activeId]);
 
-  const handleShare = useCallback(async () => {
+  const handleShareFile = useCallback(async (targetFileId?: string) => {
+    const fileId = targetFileId || activeId;
+    const targetFile = files.find(f => f.id === fileId);
+    if (!targetFile) return;
+
+    const code = fileId === activeId
+      ? (editorRef.current?.getValue() ?? targetFile.code)
+      : targetFile.code;
+
+    const fileToShare: ScFile = { ...targetFile, code };
+
+    try {
+      const url = await createShareLink([fileToShare], packages, fileId, 'file');
+      await navigator.clipboard.writeText(url);
+      setShareStatus('copied-file');
+    } catch {
+      setShareStatus('error');
+    }
+    setTimeout(() => setShareStatus('idle'), 2000);
+  }, [files, packages, activeId]);
+
+  const handleShareProject = useCallback(async () => {
     const currentCode = editorRef.current?.getValue();
     const currentFiles = currentCode !== undefined
       ? updateFileCode(files, activeId, currentCode)
       : files;
 
     try {
-      const url = await createShareLink(currentFiles, packages, activeId);
+      const url = await createShareLink(currentFiles, packages, activeId, 'project');
       await navigator.clipboard.writeText(url);
-      setShareStatus('copied');
+      setShareStatus('copied-project');
     } catch {
       setShareStatus('error');
     }
     setTimeout(() => setShareStatus('idle'), 2000);
   }, [files, packages, activeId]);
+
+  const handleShare = handleShareProject;
 
   const handleExportGist = useCallback(async () => {
     if (!settings.githubToken) {
@@ -719,14 +765,15 @@ export default function App() {
     { id: 'lang-wat',  label: 'Change Language to WebAssembly Text (.wat)', group: 'Editor', action: () => handleLanguageChange('wat') },
     { id: 'new-file',  label: 'New File',                   group: 'Files',     action: handleCreateFile },
     { id: 'download',  label: 'Download Active File',       group: 'Files',     action: () => handleDownloadFile(activeId) },
-    { id: 'share',     label: 'Copy Shareable Link',        group: 'Files',     action: handleShare },
+    { id: 'share-file', label: `Share Current File (${activeFile.name})`, group: 'Files', action: () => handleShareFile() },
+    { id: 'share-project', label: `Share Entire Project (${files.length} files)`, group: 'Files', action: handleShareProject },
     { id: 'zip',       label: 'Export All Files as ZIP',    group: 'Files',     action: handleExportZip },
     { id: 'autorun',   label: `${autoRun ? 'Disable' : 'Enable'} Auto-Run`, group: 'Editor', action: () => setAutoRun(v => !v) },
     { id: 'clear-on-run', label: `${settings.clearOnRun ? 'Disable' : 'Enable'} Clear on Run`, group: 'Console', action: () => handleSettingsChange({ ...settings, clearOnRun: !settings.clearOnRun }) },
     { id: 'shortcuts', label: 'Keyboard Shortcuts',         group: 'Help',      shortcut: `${isMac ? '⌘' : 'Ctrl'}/`, action: () => setShowShortcuts(true) },
     ...files.map((f, i) => ({ id: `switch-${f.id}`, label: `Switch to ${f.name}`, group: 'Files', shortcut: i < 9 ? `${isMac ? '⌘' : 'Ctrl'}${i + 1}` : undefined, action: () => handleSwitchFile(f.id) })),
     ...PRESETS.map(p => ({ id: `preset-${p.id}`, label: `Load preset: ${p.label}`, group: 'Presets', action: () => handlePresetSelect(p) })),
-  ], [files, activeId, autoRun, settings, handleRun, stopCode, handleFormat, clearConsole, handleAutoDetect, handleLanguageChange, handleCreateFile, handleDownloadFile, handleShare, handleExportZip, handleSwitchFile, handlePresetSelect, handleSettingsChange]);
+  ], [files, activeId, activeFile.name, autoRun, settings, handleRun, stopCode, handleFormat, clearConsole, handleAutoDetect, handleLanguageChange, handleCreateFile, handleDownloadFile, handleShareFile, handleShareProject, handleExportZip, handleSwitchFile, handlePresetSelect, handleSettingsChange]);
 
   // ── Editor pane (stable — never remounts) ────────────────────────────────────
   const activeTheme = useMemo(() => {
@@ -799,6 +846,10 @@ export default function App() {
         onClear={clearConsole}
         onFormat={handleFormat}
         onShare={handleShare}
+        onShareFile={handleShareFile}
+        onShareProject={handleShareProject}
+        activeFileName={activeFile.name}
+        fileCount={files.length}
         onExportZip={handleExportZip}
         timeoutMs={timeoutMs}
         onTimeoutChange={handleTimeoutChange}
@@ -828,6 +879,7 @@ export default function App() {
         onDelete={handleDeleteFile}
         onDuplicate={handleDuplicateFile}
         onDownload={handleDownloadFile}
+        onShare={handleShareFile}
       />
 
       <main className="app-main">

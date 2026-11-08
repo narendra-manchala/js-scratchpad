@@ -17,7 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { files, packages = [], activeId } = req.body || {};
+  const { files, packages = [], activeId, type = 'project' } = req.body || {};
 
   if (!Array.isArray(files) || files.length === 0) {
     return res.status(400).json({ error: 'At least one file is required' });
@@ -39,6 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const id = generateSlug();
   const snippetData = {
     id,
+    type: type || (files.length === 1 ? 'file' : 'project'),
     files,
     packages,
     activeId: activeId || files[0].id,

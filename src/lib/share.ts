@@ -3,6 +3,7 @@ import type { ScFile } from './files';
 
 export interface SharedSnippetPayload {
   id?: string;
+  type?: 'file' | 'project';
   files: ScFile[];
   packages?: string[];
   activeId?: string;
@@ -11,18 +12,29 @@ export interface SharedSnippetPayload {
 
 /**
  * Creates a unique, shareable link (e.g. /s/yzsesatp) stored via Upstash Redis.
+ * Supports sharing a single file ('file') or the entire multi-file project ('project').
  * Falls back to client-side LZ-string compression in URL hash if the backend is unavailable.
  */
 export async function createShareLink(
   files: ScFile[],
   packages: string[],
-  activeId: string
+  activeId: string,
+  type: 'file' | 'project' = 'project'
 ): Promise<string> {
   try {
+    const payloadFiles = type === 'file'
+      ? files.filter(f => f.id === activeId)
+      : files;
+
     const res = await fetch('/api/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files, packages, activeId }),
+      body: JSON.stringify({
+        type,
+        files: payloadFiles.length > 0 ? payloadFiles : files,
+        packages: type === 'project' ? packages : [],
+        activeId,
+      }),
     });
 
     if (res.ok) {

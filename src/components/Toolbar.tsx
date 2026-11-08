@@ -1,8 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { CodePreset } from '../lib/presets';
 import type { Settings } from '../lib/settings';
 import { SettingsPanel } from './SettingsPanel';
 import { PackagesPanel } from './PackagesPanel';
+
+export type ShareStatus = 'idle' | 'copied' | 'copied-file' | 'copied-project' | 'error';
 
 interface ToolbarProps {
   isRunning: boolean;
@@ -10,7 +12,11 @@ interface ToolbarProps {
   onStop: () => void;
   onClear?: () => void;
   onFormat: () => void;
-  onShare: () => void;
+  onShare?: () => void;
+  onShareFile: () => void;
+  onShareProject: () => void;
+  activeFileName?: string;
+  fileCount?: number;
   onExportZip: () => void;
   timeoutMs: number;
   onTimeoutChange: (ms: number) => void;
@@ -23,7 +29,7 @@ interface ToolbarProps {
   onOpenShortcuts: () => void;
   settings: Settings;
   onSettingsChange: (s: Settings) => void;
-  shareStatus: 'idle' | 'copied' | 'error';
+  shareStatus: ShareStatus;
   onExportGist: () => void;
   gistStatus: 'idle' | 'exporting' | 'copied' | 'error';
   packages: string[];
@@ -42,7 +48,8 @@ const TIMEOUT_OPTIONS = [
 ];
 
 export function Toolbar({
-  isRunning, onRun, onStop, onFormat, onShare, onExportZip,
+  isRunning, onRun, onStop, onFormat, onShare, onShareFile, onShareProject,
+  activeFileName, fileCount, onExportZip,
   timeoutMs, onTimeoutChange, presets, onPresetSelect, isMac,
   autoRun, onAutoRunToggle, onOpenPalette, onOpenShortcuts,
   settings, onSettingsChange, shareStatus, onExportGist, gistStatus,
@@ -51,8 +58,21 @@ export function Toolbar({
   const keyHint = isMac ? '⌘↵' : 'Ctrl↵';
   const [showSettings, setShowSettings] = useState(false);
   const [showPackages, setShowPackages] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const packagesBtnRef = useRef<HTMLButtonElement>(null);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showShareMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShowShareMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showShareMenu]);
 
   return (
     <header className="toolbar">
@@ -135,18 +155,70 @@ export function Toolbar({
         <div className="toolbar-sep" />
 
         {/* Share */}
-        <button
-          id="btn-share"
-          className={`btn btn-icon ${shareStatus === 'copied' ? 'btn-share-copied' : 'btn-secondary'}`}
-          onClick={onShare}
-          title="Copy shareable link"
-        >
-          {shareStatus === 'copied'
-            ? <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            : <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 .75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25zm-4.69 9.64a2 2 0 0 1 0-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83 0z"/></svg>
-          }
-          <span className="btn-icon-label-sm">{shareStatus === 'copied' ? 'Copied!' : 'Share'}</span>
-        </button>
+        <div className="share-menu-container" ref={shareMenuRef} style={{ position: 'relative' }}>
+          <button
+            id="btn-share"
+            className={`btn btn-icon ${
+              shareStatus.startsWith('copied') ? 'btn-share-copied' : 'btn-secondary'
+            }`}
+            onClick={() => setShowShareMenu(v => !v)}
+            title="Share file or project"
+            aria-expanded={showShareMenu}
+            aria-haspopup="true"
+          >
+            {shareStatus.startsWith('copied') ? (
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+            ) : (
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 .75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25zm-4.69 9.64a2 2 0 0 1 0-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83 0z"/></svg>
+            )}
+            <span className="btn-icon-label-sm">
+              {shareStatus === 'copied-file'
+                ? 'Copied File!'
+                : shareStatus === 'copied-project'
+                ? 'Copied Project!'
+                : shareStatus === 'copied'
+                ? 'Copied!'
+                : 'Share ▾'}
+            </span>
+          </button>
+
+          {showShareMenu && (
+            <div className="share-dropdown-menu">
+              <button
+                className="share-menu-item"
+                onClick={() => {
+                  setShowShareMenu(false);
+                  onShareFile();
+                }}
+              >
+                <span className="share-menu-icon">📄</span>
+                <div className="share-menu-text">
+                  <div className="share-menu-title">Share Current File</div>
+                  <div className="share-menu-subtitle">{activeFileName || 'Active file only'}</div>
+                </div>
+              </button>
+
+              <div className="ctx-sep" />
+
+              <button
+                className="share-menu-item"
+                onClick={() => {
+                  setShowShareMenu(false);
+                  onShareProject();
+                }}
+              >
+                <span className="share-menu-icon">📦</span>
+                <div className="share-menu-text">
+                  <div className="share-menu-title">Share Entire Project</div>
+                  <div className="share-menu-subtitle">
+                    {fileCount || 1} {(fileCount || 1) === 1 ? 'file' : 'files'}
+                    {packages.length > 0 ? ` · ${packages.length} pkg` : ''}
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Export ZIP */}
         <button id="btn-zip" className="btn btn-icon btn-secondary" onClick={onExportZip} title="Export all files as ZIP">
