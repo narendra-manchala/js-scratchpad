@@ -32,10 +32,13 @@ interface ToolbarProps {
 }
 
 const TIMEOUT_OPTIONS = [
-  { label: '1s', value: 1000 },
   { label: '3s', value: 3000 },
   { label: '5s', value: 5000 },
   { label: '10s', value: 10000 },
+  { label: '15s', value: 15000 },
+  { label: '30s', value: 30000 },
+  { label: '60s', value: 60000 },
+  { label: 'None', value: 0 },
 ];
 
 export function Toolbar({

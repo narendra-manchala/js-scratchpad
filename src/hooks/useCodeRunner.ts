@@ -94,16 +94,18 @@ export function useCodeRunner(packages: string[] = []): UseCodeRunnerResult {
     workerRef.current = worker;
 
     // Timeout guard
-    timeoutRef.current = setTimeout(() => {
-      terminateWorker();
-      setIsRunning(false);
-      appendEntry({
-        id: uid(),
-        level: 'error',
-        args: [{ __type: 'error', message: `Execution timed out after ${timeoutMs / 1000}s. Worker terminated.`, name: 'TimeoutError' }],
-        timestamp: Date.now(),
-      });
-    }, timeoutMs);
+    if (timeoutMs > 0) {
+      timeoutRef.current = setTimeout(() => {
+        terminateWorker();
+        setIsRunning(false);
+        appendEntry({
+          id: uid(),
+          level: 'error',
+          args: [{ __type: 'error', message: `Execution timed out after ${timeoutMs / 1000}s. Worker terminated.`, name: 'TimeoutError' }],
+          timestamp: Date.now(),
+        });
+      }, timeoutMs);
+    }
 
     worker.addEventListener('message', (event: MessageEvent<WorkerOutboundMessage>) => {
       const msg = event.data;

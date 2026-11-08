@@ -93,7 +93,7 @@ export default function App() {
   }, []);
 
   // ── Timeout ─────────────────────────────────────────────────────────────────
-  const [timeoutMs, setTimeoutMs] = useState(() => loadTimeout() ?? 3000);
+  const [timeoutMs, setTimeoutMs] = useState(() => loadTimeout() ?? 30000);
   const handleTimeoutChange = useCallback((ms: number) => {
     setTimeoutMs(ms);
     saveTimeout(ms);
