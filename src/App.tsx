@@ -645,15 +645,33 @@ export default function App() {
   }, []);
 
   const handlePresetSelect = useCallback((preset: CodePreset) => {
-    const code = preset.code;
-    setFiles(prev => updateFileCode(prev, activeId, code));
-    const model = modelMapRef.current.get(activeId);
-    if (model && !model.isDisposed()) model.setValue(code);
-    if (preset.language) {
-      handleLanguageChange(preset.language);
+    const ext = preset.language ? getExtFromLanguage(preset.language) : '.ts';
+    const base = preset.id;
+    const existingNames = new Set(filesRef.current.map(f => f.name.toLowerCase()));
+
+    let fileName = `${base}${ext}`;
+    if (existingNames.has(fileName.toLowerCase())) {
+      let n = 2;
+      while (existingNames.has(`${base}-${n}${ext}`.toLowerCase())) n++;
+      fileName = `${base}-${n}${ext}`;
     }
-    showToast(`Loaded preset: ${preset.label.replace(/^[^\s]+\s/, '')}`, 'info');
-  }, [activeId, handleLanguageChange, showToast]);
+
+    const newFile = makeFile(fileName, preset.code);
+    setFiles(prev => [...prev, newFile]);
+
+    if (monacoRef.current) {
+      const model = getOrCreateModel(monacoRef.current, newFile);
+      if (editorRef.current) {
+        editorRef.current.setModel(model);
+      }
+    }
+
+    setActiveId(newFile.id);
+    clearConsole();
+    setHistoryIdx(-1);
+    editorRef.current?.focus();
+    showToast(`Opened preset in new tab: ${fileName}`, 'info');
+  }, [getOrCreateModel, clearConsole, showToast]);
 
   const handleShareFile = useCallback(async (targetFileId?: string) => {
     const fileId = targetFileId || activeId;
