@@ -12,6 +12,7 @@ import { TabBar } from './components/TabBar';
 import { StatusBar } from './components/StatusBar';
 import { CommandPalette, type PaletteCommand } from './components/CommandPalette';
 import { ShortcutsPanel } from './components/ShortcutsPanel';
+import { ToastContainer, type ToastMessage, type ToastType } from './components/Toast';
 import { PRESETS, type CodePreset } from './lib/presets';
 import { loadTimeout, saveTimeout } from './lib/storage';
 import {
@@ -123,6 +124,16 @@ export default function App() {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
   const [ataState, setAtaState] = useState<AtaState>({ status: 'idle' });
 
+  // ── Toasts ──────────────────────────────────────────────────────────────────
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const showToast = useCallback((text: string, type: ToastType = 'info') => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setToasts(prev => [...prev.slice(-3), { id, text, type }]);
+  }, []);
+  const handleDismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   // ── Packages ────────────────────────────────────────────────────────────────
   const [packages, setPackages] = useState<string[]>(() => {
     try {
@@ -215,6 +226,7 @@ export default function App() {
             model.setValue(sharedFile.code);
           }
         }
+        showToast(`Loaded shared file: ${sharedFile.name}`, 'success');
       } else {
         // Project share: restore entire workspace & packages
         setFiles(snippet.files);
@@ -234,9 +246,10 @@ export default function App() {
             model.setValue(file.code);
           }
         }
+        showToast(`Restored shared workspace (${snippet.files.length} files)`, 'success');
       }
     });
-  }, []);
+  }, [showToast]);
 
   // ── Save files (debounced) ───────────────────────────────────────────────────
   useEffect(() => {
@@ -482,13 +495,15 @@ export default function App() {
     clearConsole();
     setHistoryIdx(-1);
     editorRef.current?.focus();
-  }, [getOrCreateModel, clearConsole]);
+    showToast(`Created file: ${newFile.name}`, 'info');
+  }, [getOrCreateModel, clearConsole, showToast]);
 
   const handleRenameFile = useCallback((id: string, name: string) => {
     setFiles(prev => updateFileName(prev, id, name));
   }, []);
 
   const handleDeleteFile = useCallback((id: string) => {
+    const targetFile = filesRef.current.find(f => f.id === id);
     const { files: next, nextActiveId } = deleteFile(filesRef.current, id, activeIdRef.current);
     setFiles(next);
     const model = modelMapRef.current.get(id);
@@ -503,7 +518,8 @@ export default function App() {
       setHistoryIdx(-1);
     }
     setActiveId(nextActiveId);
-  }, [getOrCreateModel, clearConsole]);
+    if (targetFile) showToast(`Deleted file: ${targetFile.name}`, 'info');
+  }, [getOrCreateModel, clearConsole, showToast]);
 
   const handleDuplicateFile = useCallback((id: string) => {
     const { files: next, newFile } = duplicateFile(filesRef.current, id);
@@ -516,7 +532,8 @@ export default function App() {
     clearConsole();
     setHistoryIdx(-1);
     editorRef.current?.focus();
-  }, [getOrCreateModel, clearConsole]);
+    showToast(`Duplicated file: ${newFile.name}`, 'info');
+  }, [getOrCreateModel, clearConsole, showToast]);
 
   const handleDownloadFile = useCallback((id: string) => {
     const file = filesRef.current.find(f => f.id === id);
@@ -635,7 +652,8 @@ export default function App() {
     if (preset.language) {
       handleLanguageChange(preset.language);
     }
-  }, [activeId, handleLanguageChange]);
+    showToast(`Loaded preset: ${preset.label.replace(/^[^\s]+\s/, '')}`, 'info');
+  }, [activeId, handleLanguageChange, showToast]);
 
   const handleShareFile = useCallback(async (targetFileId?: string) => {
     const fileId = targetFileId || activeId;
@@ -652,11 +670,13 @@ export default function App() {
       const url = await createShareLink([fileToShare], packages, fileId, 'file');
       await navigator.clipboard.writeText(url);
       setShareStatus('copied-file');
+      showToast(`Copied share link for "${targetFile.name}"!`, 'success');
     } catch {
       setShareStatus('error');
+      showToast('Failed to create share link', 'error');
     }
     setTimeout(() => setShareStatus('idle'), 2000);
-  }, [files, packages, activeId]);
+  }, [files, packages, activeId, showToast]);
 
   const handleShareProject = useCallback(async () => {
     const currentCode = editorRef.current?.getValue();
@@ -668,11 +688,13 @@ export default function App() {
       const url = await createShareLink(currentFiles, packages, activeId, 'project');
       await navigator.clipboard.writeText(url);
       setShareStatus('copied-project');
+      showToast(`Copied project share link (${files.length} files)!`, 'success');
     } catch {
       setShareStatus('error');
+      showToast('Failed to create project share link', 'error');
     }
     setTimeout(() => setShareStatus('idle'), 2000);
-  }, [files, packages, activeId]);
+  }, [files, packages, activeId, showToast]);
 
   const handleShare = handleShareProject;
 
@@ -693,12 +715,14 @@ export default function App() {
       const url = await exportToGist(currentFiles, settings.githubToken);
       await navigator.clipboard.writeText(url);
       setGistStatus('copied');
+      showToast('Exported to GitHub Gist!', 'success');
     } catch (e: any) {
       alert("Export failed: " + e.message);
       setGistStatus('error');
+      showToast('GitHub Gist export failed', 'error');
     }
     setTimeout(() => setGistStatus('idle'), 3000);
-  }, [settings.githubToken]);
+  }, [settings.githubToken, showToast]);
 
   const handleExportZip = useCallback(async () => {
     const zip = new JSZip();
@@ -712,7 +736,8 @@ export default function App() {
     const a = document.createElement('a');
     a.href = url; a.download = 'js-scratchpad.zip'; a.click();
     URL.revokeObjectURL(url);
-  }, []);
+    showToast(`Downloaded project ZIP (${filesRef.current.length} files)`, 'success');
+  }, [showToast]);
 
   // ── Drag & Drop ───────────────────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -936,6 +961,11 @@ export default function App() {
       <ShortcutsPanel
         open={showShortcuts}
         onClose={() => setShowShortcuts(false)}
+      />
+
+      <ToastContainer
+        toasts={toasts}
+        onDismiss={handleDismissToast}
       />
     </div>
   );

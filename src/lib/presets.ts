@@ -10,6 +10,48 @@ export interface CodePreset {
 
 export const PRESETS: CodePreset[] = [
   {
+    id: 'bench-comparison',
+    label: '⚡ Benchmarking: Array vs Set vs Map',
+    description: 'Uses built-in bench() to compare lookups, ops/sec, and speedup',
+    language: 'typescript',
+    code: `// ⚡ Built-in Pure-JS Benchmarking: bench(label, fn)
+// The scratchpad provides a global \`bench(name, fn)\` function.
+// It warms up, measures iterations, calculates ops/sec, and produces a summary!
+
+const size = 1000;
+const targetKey = 'item_950';
+
+const array = Array.from({ length: size }, (_, i) => \`item_\${i}\`);
+const set = new Set(array);
+const map = new Map(array.map(k => [k, true]));
+const object = Object.fromEntries(array.map(k => [k, true]));
+
+console.log(\`Benchmarking lookup performance on \${size} items:\\n\`);
+
+// 1. Array.includes (O(n) linear scan)
+await bench('Array.includes', () => {
+  array.includes(targetKey);
+});
+
+// 2. Set.has (O(1) hash lookup)
+await bench('Set.has', () => {
+  set.has(targetKey);
+});
+
+// 3. Map.has (O(1) hash lookup)
+await bench('Map.has', () => {
+  map.has(targetKey);
+});
+
+// 4. Object property access (O(1))
+await bench('Object[key]', () => {
+  return object[targetKey];
+});
+
+// 💡 Notice the automatic 🏆 Benchmark Summary printed at the end!
+`,
+  },
+  {
     id: 'event-loop',
     label: '🔄 Event Loop: Microtasks vs Macrotasks',
     description: 'Visualizes sync vs queueMicrotask vs Promise.then vs setTimeout',

@@ -223,6 +223,14 @@ function ConsoleEntry({
         }
       </div>
       {count > 1 && <span className="dedup-badge">{count}</span>}
+      {typeof entry.elapsed === 'number' && (
+        <span
+          className="entry-elapsed"
+          title={`Executed at +${entry.elapsed.toFixed(1)}ms`}
+        >
+          +{entry.elapsed < 1000 ? `${Math.round(entry.elapsed)}ms` : `${(entry.elapsed / 1000).toFixed(2)}s`}
+        </span>
+      )}
       <div className="entry-actions"><CopyButton getText={getText} title="Copy" /></div>
     </div>
   );

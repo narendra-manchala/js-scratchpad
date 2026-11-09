@@ -20,11 +20,11 @@ export interface HistoryEntry {
 }
 
 type WorkerOutboundMessage =
-  | { type: 'console'; level: 'log' | 'warn' | 'error' | 'info' | 'table'; args: SerializedValue[] }
-  | { type: 'return'; value: SerializedValue }
+  | { type: 'console'; level: 'log' | 'warn' | 'error' | 'info' | 'table'; args: SerializedValue[]; elapsed?: number }
+  | { type: 'return'; value: SerializedValue; elapsed?: number }
   | { type: 'perf'; action: 'mark' | 'measure'; name: string; duration?: number; startTime: number }
   | { type: 'done'; elapsed: number }
-  | { type: 'error'; message: string; name: string; stack?: string; lineNumber?: number };
+  | { type: 'error'; message: string; name: string; stack?: string; lineNumber?: number; elapsed?: number };
 
 let _id = 0;
 function uid(): string { return `entry-${++_id}-${Date.now()}`; }
@@ -111,13 +111,13 @@ export function useCodeRunner(packages: string[] = []): UseCodeRunnerResult {
       const msg = event.data;
       switch (msg.type) {
         case 'console':
-          appendEntry({ id: uid(), level: msg.level, args: msg.args, timestamp: Date.now() });
+          appendEntry({ id: uid(), level: msg.level, args: msg.args, timestamp: Date.now(), elapsed: msg.elapsed });
           break;
         case 'return':
-          appendEntry({ id: uid(), level: 'return', args: [msg.value], timestamp: Date.now() });
+          appendEntry({ id: uid(), level: 'return', args: [msg.value], timestamp: Date.now(), elapsed: msg.elapsed });
           break;
         case 'error':
-          appendEntry({ id: uid(), level: 'error', args: [{ __type: 'error', message: msg.message, name: msg.name, stack: msg.stack, lineNumber: msg.lineNumber }], timestamp: Date.now() });
+          appendEntry({ id: uid(), level: 'error', args: [{ __type: 'error', message: msg.message, name: msg.name, stack: msg.stack, lineNumber: msg.lineNumber }], timestamp: Date.now(), elapsed: msg.elapsed });
           break;
         case 'perf':
           appendEntry({

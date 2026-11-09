@@ -14,11 +14,11 @@ import { parse } from 'acorn';
 import { serialize, serializeArgs, type SerializedValue } from './lib/serializer';
 
 type WorkerOutboundMessage =
-  | { type: 'console'; level: 'log' | 'warn' | 'error' | 'info' | 'table'; args: SerializedValue[] }
-  | { type: 'return'; value: SerializedValue }
+  | { type: 'console'; level: 'log' | 'warn' | 'error' | 'info' | 'table'; args: SerializedValue[]; elapsed?: number }
+  | { type: 'return'; value: SerializedValue; elapsed?: number }
   | { type: 'perf'; action: 'mark' | 'measure'; name: string; duration?: number; startTime: number }
   | { type: 'done'; elapsed: number }
-  | { type: 'error'; message: string; name: string; stack?: string; lineNumber?: number };
+  | { type: 'error'; message: string; name: string; stack?: string; lineNumber?: number; elapsed?: number };
 
 type WorkerInboundMessage = {
   cmd: 'run';
@@ -34,6 +34,12 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
 
 function send(msg: WorkerOutboundMessage) {
   self.postMessage(msg);
+}
+
+let runStartTime = 0;
+
+function getElapsed(): number {
+  return runStartTime > 0 ? Math.max(0, performance.now() - runStartTime) : 0;
 }
 
 // ── Console patching ──────────────────────────────────────────────────────────
@@ -55,7 +61,7 @@ function patchConsole() {
   for (const level of levels) {
     (console as unknown as Record<string, unknown>)[level] = (...args: unknown[]) => {
       try { originalConsole[level](...args); } catch {}
-      send({ type: 'console', level, args: serializeArgs(args) });
+      send({ type: 'console', level, args: serializeArgs(args), elapsed: getElapsed() });
     };
   }
 
@@ -68,23 +74,23 @@ function patchConsole() {
     try { originalConsole.timeLog?.(label, ...args); } catch {}
     const start = timers.get(label);
     if (start === undefined) {
-      send({ type: 'console', level: 'warn', args: serializeArgs([`Timer '${label}' does not exist`]) });
+      send({ type: 'console', level: 'warn', args: serializeArgs([`Timer '${label}' does not exist`]), elapsed: getElapsed() });
       return;
     }
     const elapsed = performance.now() - start;
-    send({ type: 'console', level: 'info', args: serializeArgs([`${label}: ${elapsed.toFixed(3)} ms`, ...args]) });
+    send({ type: 'console', level: 'info', args: serializeArgs([`${label}: ${elapsed.toFixed(3)} ms`, ...args]), elapsed: getElapsed() });
   };
 
   (console as any).timeEnd = (label = 'default') => {
     try { originalConsole.timeEnd?.(label); } catch {}
     const start = timers.get(label);
     if (start === undefined) {
-      send({ type: 'console', level: 'warn', args: serializeArgs([`Timer '${label}' does not exist`]) });
+      send({ type: 'console', level: 'warn', args: serializeArgs([`Timer '${label}' does not exist`]), elapsed: getElapsed() });
       return;
     }
     const elapsed = performance.now() - start;
     timers.delete(label);
-    send({ type: 'console', level: 'info', args: serializeArgs([`${label}: ${elapsed.toFixed(3)} ms - timer ended`]) });
+    send({ type: 'console', level: 'info', args: serializeArgs([`${label}: ${elapsed.toFixed(3)} ms - timer ended`]), elapsed: getElapsed() });
   };
 }
 
@@ -122,13 +128,80 @@ const realToCustomInterval = new Map<number, number>();
 let activeFetches = 0;
 let isSyncExecutionDone = false;
 let hasSentDone = false;
-let runStartTime = 0;
 
 const originalSetTimeout = self.setTimeout.bind(self);
 const originalClearTimeout = self.clearTimeout.bind(self);
 const originalSetInterval = self.setInterval.bind(self);
 const originalClearInterval = self.clearInterval.bind(self);
 const originalFetch = typeof self.fetch === 'function' ? self.fetch.bind(self) : undefined;
+
+// ── Pure-JS Benchmark Suite & Helper ───────────────────────────────────────────
+interface BenchmarkResult {
+  name: string;
+  opsPerSec: number;
+  avgTimeNs: number;
+  iterations: number;
+}
+
+const benchmarkSuite: BenchmarkResult[] = [];
+
+async function bench(
+  name: string,
+  fn: () => unknown | Promise<unknown>,
+  options: { maxTimeMs?: number; maxIterations?: number } = {}
+): Promise<BenchmarkResult> {
+  const maxTimeMs = options.maxTimeMs ?? 60; // 60ms sampling window
+  const maxIterations = options.maxIterations ?? 1_000_000;
+
+  // Warmup
+  for (let i = 0; i < 3; i++) {
+    const res = fn();
+    if (res instanceof Promise) await res;
+  }
+
+  // Detect async
+  const sample = fn();
+  const isAsync = sample instanceof Promise;
+  if (isAsync) await sample;
+
+  const start = performance.now();
+  let iterations = 1;
+  const targetEnd = start + maxTimeMs;
+
+  if (isAsync) {
+    while (performance.now() < targetEnd && iterations < maxIterations) {
+      await fn();
+      iterations++;
+    }
+  } else {
+    while (performance.now() < targetEnd && iterations < maxIterations) {
+      for (let j = 0; j < 25; j++) {
+        fn();
+      }
+      iterations += 25;
+    }
+  }
+
+  const durationMs = performance.now() - start;
+  const opsPerSec = Math.round((iterations / (durationMs / 1000)));
+  const avgTimeNs = (durationMs * 1_000_000) / iterations;
+
+  const formattedTime =
+    avgTimeNs < 1000
+      ? `${avgTimeNs.toFixed(1)} ns/op`
+      : avgTimeNs < 1_000_000
+      ? `${(avgTimeNs / 1000).toFixed(2)} µs/op`
+      : `${(avgTimeNs / 1_000_000).toFixed(2)} ms/op`;
+
+  const result: BenchmarkResult = { name, opsPerSec, avgTimeNs, iterations };
+  benchmarkSuite.push(result);
+
+  (console as any).log(`⚡ [bench] ${name}: ${opsPerSec.toLocaleString()} ops/sec (${formattedTime}, ${iterations.toLocaleString()} runs)`);
+
+  return result;
+}
+
+(self as any).bench = bench;
 
 function checkDone() {
   if (
@@ -138,6 +211,18 @@ function checkDone() {
     activeIntervals.size === 0 &&
     activeFetches === 0
   ) {
+    // If multiple benchmarks were executed, output a clean comparison summary
+    if (benchmarkSuite.length > 1) {
+      const sorted = [...benchmarkSuite].sort((a, b) => b.opsPerSec - a.opsPerSec);
+      const fastest = sorted[0];
+      const summary = sorted.map((b, i) => {
+        if (i === 0) return `🥇 ${b.name}: ${b.opsPerSec.toLocaleString()} ops/sec (fastest)`;
+        const diff = (fastest.opsPerSec / b.opsPerSec).toFixed(1);
+        return `   ${b.name}: ${b.opsPerSec.toLocaleString()} ops/sec (${diff}x slower)`;
+      });
+      (console as any).log(`\n🏆 Benchmark Summary:\n` + summary.join('\n'));
+    }
+
     hasSentDone = true;
     const elapsed = performance.now() - runStartTime;
     send({ type: 'done', elapsed });
@@ -245,12 +330,14 @@ function patchAsyncApis() {
         message: reason.message,
         name: reason.name,
         stack: reason.stack,
+        elapsed: getElapsed(),
       });
     } else {
       send({
         type: 'error',
         message: typeof reason === 'object' && reason !== null ? JSON.stringify(reason) : String(reason),
         name: 'UnhandledPromiseRejection',
+        elapsed: getElapsed(),
       });
     }
     checkDone();
@@ -417,6 +504,8 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
 
   const { code, packages = [], language } = event.data;
   const startTime = performance.now();
+  runStartTime = startTime;
+  benchmarkSuite.length = 0;
 
   const isWat = language === 'wat' || code.trimStart().startsWith('(module');
 
@@ -437,7 +526,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
     ) {
       try {
         const parsed = JSON.parse(trimmed);
-        send({ type: 'return', value: serialize(parsed) });
+        send({ type: 'return', value: serialize(parsed), elapsed: getElapsed() });
         const elapsed = performance.now() - startTime;
         send({ type: 'done', elapsed });
         return;
@@ -447,7 +536,6 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
     }
 
     // ── JS / TS path — Sucrase (instant, offline) ──────────────────────────
-    runStartTime = startTime;
     isSyncExecutionDone = false;
     hasSentDone = false;
     activeTimers.clear();
@@ -466,7 +554,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
     const result = await asyncFn();
 
     if (result !== undefined) {
-      send({ type: 'return', value: serialize(result) });
+      send({ type: 'return', value: serialize(result), elapsed: getElapsed() });
     }
 
     isSyncExecutionDone = true;
@@ -492,9 +580,9 @@ self.addEventListener('message', async (event: MessageEvent<WorkerInboundMessage
         lineNumber = lineMatch ? parseInt(lineMatch[1]) : undefined;
       }
 
-      send({ type: 'error', message: err.message, name: err.name, stack, lineNumber });
+      send({ type: 'error', message: err.message, name: err.name, stack, lineNumber, elapsed: getElapsed() });
     } else {
-      send({ type: 'error', message: String(err), name: 'Error' });
+      send({ type: 'error', message: String(err), name: 'Error', elapsed: getElapsed() });
     }
 
     isSyncExecutionDone = true;
