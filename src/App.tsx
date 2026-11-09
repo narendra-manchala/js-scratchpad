@@ -362,6 +362,55 @@ export default function App() {
     monacoInstance.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions);
     monacoInstance.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions);
 
+    // Provide IntelliSense and TypeScript definitions for built-in sandbox globals
+    const benchTypeDef = `
+/**
+ * Result of a benchmark execution.
+ */
+interface BenchmarkResult {
+  /** Label of the benchmark */
+  name: string;
+  /** Estimated operations executed per second */
+  opsPerSec: number;
+  /** Average duration in nanoseconds per single operation */
+  avgTimeNs: number;
+  /** Total iterations executed during the sampling window */
+  iterations: number;
+}
+
+/**
+ * Benchmark configuration options.
+ */
+interface BenchmarkOptions {
+  /** Maximum duration to run the benchmark sampling window in milliseconds (default: 60) */
+  maxTimeMs?: number;
+  /** Maximum number of iterations to run (default: 1,000,000) */
+  maxIterations?: number;
+}
+
+/**
+ * Runs a micro-benchmark on a synchronous or asynchronous function.
+ * Calculates operations per second (ops/sec) and prints real-time results and comparative summaries to the console.
+ *
+ * @param name Description or label for the test case
+ * @param fn Synchronous or asynchronous function to benchmark
+ * @param options Optional sampling window configuration
+ *
+ * @example
+ * \`\`\`ts
+ * await bench('Array.includes', () => array.includes(target));
+ * await bench('Set.has', () => set.has(target));
+ * \`\`\`
+ */
+declare function bench(
+  name: string,
+  fn: () => unknown | Promise<unknown>,
+  options?: BenchmarkOptions
+): Promise<BenchmarkResult>;
+`;
+    monacoInstance.languages.typescript.typescriptDefaults.addExtraLib(benchTypeDef, 'ts:scratchpad/bench.d.ts');
+    monacoInstance.languages.typescript.javascriptDefaults.addExtraLib(benchTypeDef, 'ts:scratchpad/bench.d.ts');
+
     // Create models for all files
     filesRef.current.forEach(file => getOrCreateModel(monacoInstance, file));
     editorInstance.setModel(getOrCreateModel(monacoInstance, filesRef.current[0]));
