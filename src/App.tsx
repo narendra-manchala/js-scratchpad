@@ -355,12 +355,25 @@ export default function App() {
       target: monacoInstance.languages.typescript.ScriptTarget.ESNext,
       module: monacoInstance.languages.typescript.ModuleKind.ESNext,
       moduleResolution: monacoInstance.languages.typescript.ModuleResolutionKind.NodeJs,
+      moduleDetection: 3 as any, // ModuleDetectionKind.Force: treats every file as a module so top-level await is always allowed
       allowTopLevelAwait: true,
       noEmit: true,
     };
 
     monacoInstance.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions);
     monacoInstance.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions);
+
+    // Suppress TS1375 ('await' at top level without import/export) since scratchpad automatically wraps in async module
+    const currentDiagnostics = monacoInstance.languages.typescript.typescriptDefaults.getDiagnosticsOptions();
+    const diagnosticsOptions = {
+      ...currentDiagnostics,
+      diagnosticCodesToIgnore: [
+        ...(currentDiagnostics.diagnosticCodesToIgnore || []),
+        1375,
+      ],
+    };
+    monacoInstance.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticsOptions);
+    monacoInstance.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticsOptions);
 
     // Provide IntelliSense and TypeScript definitions for built-in sandbox globals
     const benchTypeDef = `
