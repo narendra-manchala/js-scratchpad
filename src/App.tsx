@@ -632,7 +632,10 @@ export default function App() {
     setFiles(prev => updateFileCode(prev, activeId, code));
     const model = modelMapRef.current.get(activeId);
     if (model && !model.isDisposed()) model.setValue(code);
-  }, [activeId]);
+    if (preset.language) {
+      handleLanguageChange(preset.language);
+    }
+  }, [activeId, handleLanguageChange]);
 
   const handleShareFile = useCallback(async (targetFileId?: string) => {
     const fileId = targetFileId || activeId;
