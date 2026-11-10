@@ -10,6 +10,11 @@ interface ObjectTreeProps {
 
 const MAX_PREVIEW_ITEMS = 5;
 
+function getShortPreview(value: SerializedValue): string {
+  if (value.__type === 'function') return 'ƒ';
+  return getPreview(value);
+}
+
 function getPreview(value: SerializedValue): string {
   switch (value.__type) {
     case 'primitive':
@@ -27,24 +32,25 @@ function getPreview(value: SerializedValue): string {
     case 'map': return `Map(${value.entries.length})`;
     case 'set': return `Set(${value.values.length})`;
     case 'array': {
+      if (value.isPrototype && value.keys && value.keys.length > 0) {
+        const preview = value.keys.slice(0, MAX_PREVIEW_ITEMS)
+          .map((k, i) => `${k}: ${getShortPreview(value.values![i])}`)
+          .join(', ');
+        const more = value.keys.length > MAX_PREVIEW_ITEMS ? ', …' : '';
+        return `[${preview}${more}]`;
+      }
       if (value.items.length === 0) return '[]';
-      const preview = value.items.slice(0, MAX_PREVIEW_ITEMS).map(getPreview).join(', ');
+      const preview = value.items.slice(0, MAX_PREVIEW_ITEMS).map(getShortPreview).join(', ');
       const more = value.length > MAX_PREVIEW_ITEMS ? `, … +${value.length - MAX_PREVIEW_ITEMS}` : '';
       return `[${preview}${more}]`;
     }
     case 'object': {
-      if (value.isPrototype && value.prototypeName) {
-        if (value.keys.length === 0) return `${value.prototypeName} {}`;
-        const preview = value.keys.slice(0, MAX_PREVIEW_ITEMS).join(', ');
-        const more = value.keys.length > MAX_PREVIEW_ITEMS ? `, … +${value.keys.length - MAX_PREVIEW_ITEMS} more` : '';
-        return `${value.prototypeName} { ${preview}${more} }`;
-      }
       if (value.keys.length === 0) return value.constructorName ? `${value.constructorName} {}` : '{}';
       const preview = value.keys.slice(0, MAX_PREVIEW_ITEMS)
-        .map((k, i) => `${k}: ${getPreview(value.values[i])}`)
+        .map((k, i) => `${k}: ${getShortPreview(value.values[i])}`)
         .join(', ');
-      const more = value.keys.length > MAX_PREVIEW_ITEMS ? `, …` : '';
-      const prefix = value.constructorName ? `${value.constructorName} ` : '';
+      const more = value.keys.length > MAX_PREVIEW_ITEMS ? ', …' : '';
+      const prefix = value.constructorName && !value.isPrototype ? `${value.constructorName} ` : '';
       return `${prefix}{${preview}${more}}`;
     }
     default: return '[Unknown]';
@@ -52,7 +58,7 @@ function getPreview(value: SerializedValue): string {
 }
 
 function isExpandable(value: SerializedValue): boolean {
-  if (value.__type === 'array') return value.items.length > 0 || !!value.proto;
+  if (value.__type === 'array') return value.items.length > 0 || (!!value.keys && value.keys.length > 0) || !!value.proto;
   if (value.__type === 'object') return value.keys.length > 0 || !!value.proto;
   if (value.__type === 'map') return value.entries.length > 0;
   if (value.__type === 'set') return value.values.length > 0;
@@ -81,7 +87,8 @@ function ValueChip({ value }: { value: SerializedValue }) {
 }
 
 export function ObjectTree({ value, depth = 0, label, onSelectLine }: ObjectTreeProps) {
-  const [expanded, setExpanded] = useState(depth === 0 && isExpandable(value));
+  // Collapsed by default, matching browser console behavior
+  const [expanded, setExpanded] = useState(false);
   const toggle = useCallback(() => setExpanded(e => !e), []);
 
   const canExpand = isExpandable(value);
@@ -142,9 +149,13 @@ export function ObjectTree({ value, depth = 0, label, onSelectLine }: ObjectTree
         <div className="tree-children">
           {value.__type === 'array' && (
             <>
-              {value.items.map((item, i) => (
-                <ObjectTree key={i} value={item} depth={depth + 1} label={String(i)} onSelectLine={onSelectLine} />
-              ))}
+              {value.isPrototype && value.keys
+                ? value.keys.map((key, i) => (
+                    <ObjectTree key={key} value={value.values![i]} depth={depth + 1} label={key} onSelectLine={onSelectLine} />
+                  ))
+                : value.items.map((item, i) => (
+                    <ObjectTree key={i} value={item} depth={depth + 1} label={String(i)} onSelectLine={onSelectLine} />
+                  ))}
               {value.proto && (
                 <ObjectTree value={value.proto} depth={depth + 1} label="[[Prototype]]" onSelectLine={onSelectLine} />
               )}

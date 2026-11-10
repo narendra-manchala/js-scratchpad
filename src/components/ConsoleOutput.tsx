@@ -64,20 +64,20 @@ function valueToText(value: SerializedValue, depth = 0): string {
       return `Set(${value.values.length}) {\n${vals.join(',\n')}\n${indent}}`;
     }
     case 'array': {
+      if (value.isPrototype && value.keys) {
+        if (value.keys.length === 0) return '[]';
+        const pairs = value.keys.map((k, i) => `${indent}  ${k}: ${valueToText(value.values![i], depth + 1)}`);
+        return `[\n${pairs.join(',\n')}\n${indent}]`;
+      }
       if (value.items.length === 0) return '[]';
       const items = value.items.map(item => `${indent}  ${valueToText(item, depth + 1)}`);
       const more = value.length > value.items.length ? `\n${indent}  ... +${value.length - value.items.length} more` : '';
       return `[\n${items.join(',\n')}${more}\n${indent}]`;
     }
     case 'object': {
-      if (value.isPrototype && value.prototypeName) {
-        if (value.keys.length === 0) return `${value.prototypeName} {}`;
-        const pairs = value.keys.map((k, i) => `${indent}  ${k}: ${valueToText(value.values[i], depth + 1)}`);
-        return `${value.prototypeName} {\n${pairs.join(',\n')}\n${indent}}`;
-      }
       if (value.keys.length === 0) return value.constructorName ? `${value.constructorName} {}` : '{}';
       const pairs = value.keys.map((k, i) => `${indent}  ${k}: ${valueToText(value.values[i], depth + 1)}`);
-      const prefix = value.constructorName ? `${value.constructorName} ` : '';
+      const prefix = value.constructorName && !value.isPrototype ? `${value.constructorName} ` : '';
       return `${prefix}{\n${pairs.join(',\n')}\n${indent}}`;
     }
     default: return '[Unknown]';

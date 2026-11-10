@@ -15,7 +15,16 @@ export type SerializedValue =
   | { __type: 'circular'; ref: string }
   | { __type: 'map'; entries: Array<[SerializedValue, SerializedValue]> }
   | { __type: 'set'; values: SerializedValue[] }
-  | { __type: 'array'; items: SerializedValue[]; length: number; proto?: SerializedValue }
+  | {
+      __type: 'array';
+      items: SerializedValue[];
+      length: number;
+      isPrototype?: boolean;
+      prototypeName?: string;
+      keys?: string[];
+      values?: SerializedValue[];
+      proto?: SerializedValue;
+    }
   | {
       __type: 'object';
       keys: string[];
@@ -183,11 +192,25 @@ export function serialize(
       } catch {}
     }
 
+    const isArrayProto = Array.isArray(value);
+    if (isArrayProto) {
+      return {
+        __type: 'array',
+        items: [],
+        length: (obj as any).length ?? 0,
+        isPrototype: true,
+        prototypeName,
+        keys,
+        values,
+        proto: protoVal,
+      };
+    }
+
     return {
       __type: 'object',
       keys,
       values,
-      constructorName: prototypeName,
+      constructorName: prototypeName === 'Object.prototype' ? undefined : prototypeName,
       isPrototype: true,
       prototypeName,
       proto: protoVal,
