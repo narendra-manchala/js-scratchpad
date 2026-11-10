@@ -1,7 +1,7 @@
 /**
  * Safe serializer for crossing the Web Worker postMessage boundary.
  * Handles circular references, BigInt, Symbol, Map, Set, Date, RegExp,
- * Error objects, and deeply nested structures.
+ * Error objects, prototypes, and deeply nested structures.
  */
 
 export type SerializedValue =
@@ -15,12 +15,43 @@ export type SerializedValue =
   | { __type: 'circular'; ref: string }
   | { __type: 'map'; entries: Array<[SerializedValue, SerializedValue]> }
   | { __type: 'set'; values: SerializedValue[] }
-  | { __type: 'array'; items: SerializedValue[]; length: number }
-  | { __type: 'object'; keys: string[]; values: SerializedValue[]; constructorName?: string };
+  | { __type: 'array'; items: SerializedValue[]; length: number; proto?: SerializedValue }
+  | {
+      __type: 'object';
+      keys: string[];
+      values: SerializedValue[];
+      constructorName?: string;
+      isPrototype?: boolean;
+      prototypeName?: string;
+      proto?: SerializedValue;
+    };
 
 const MAX_DEPTH = 10;
 const MAX_ARRAY_ITEMS = 100;
-const MAX_OBJECT_KEYS = 50;
+const MAX_OBJECT_KEYS = 80;
+
+function isPrototypeObject(obj: unknown): boolean {
+  if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return false;
+  try {
+    return !!(
+      (obj as any).constructor &&
+      typeof (obj as any).constructor === 'function' &&
+      (obj as any).constructor.prototype === obj
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getPrototypeName(obj: any): string {
+  try {
+    const ctor = obj.constructor;
+    if (ctor && typeof ctor === 'function' && ctor.name) {
+      return `${ctor.name}.prototype`;
+    }
+  } catch {}
+  return 'prototype';
+}
 
 export function serialize(
   value: unknown,
@@ -106,23 +137,111 @@ export function serialize(
     return { __type: 'set', values };
   }
 
+  // ── Special handling for Prototype objects (e.g. Array.prototype, Object.prototype) ──
+  const isProto = isPrototypeObject(value);
+  if (isProto) {
+    let propNames: string[] = [];
+    try {
+      const names = Object.getOwnPropertyNames(obj);
+      const symbols = Object.getOwnPropertySymbols(obj).map(s => s.toString());
+      const withoutCtor = names.filter(n => n !== 'constructor');
+      withoutCtor.sort();
+      propNames = (names.includes('constructor') ? ['constructor', ...withoutCtor] : withoutCtor).concat(symbols);
+    } catch {
+      propNames = Object.keys(obj);
+    }
+
+    const keys = propNames.slice(0, MAX_OBJECT_KEYS);
+    const values: SerializedValue[] = keys.map(k => {
+      let propVal: unknown;
+      try {
+        const desc = Object.getOwnPropertyDescriptor(obj, k);
+        if (desc && 'value' in desc) {
+          propVal = desc.value;
+        } else if (desc && (desc.get || desc.set)) {
+          propVal = desc.get ? 'ƒ [Getter]' : 'ƒ [Setter]';
+        } else {
+          propVal = (obj as any)[k];
+        }
+      } catch (e: any) {
+        propVal = `[Error: ${e?.message ?? 'inaccessible'}]`;
+      }
+      return serialize(propVal, seen, `${path}.${k}`, depth + 1);
+    });
+
+    const prototypeName = getPrototypeName(obj);
+
+    let protoVal: SerializedValue | undefined;
+    if (depth < 3) {
+      try {
+        const proto = Object.getPrototypeOf(obj);
+        if (proto !== null && proto !== undefined) {
+          protoVal = serialize(proto, seen, `${path}.[[Prototype]]`, depth + 1);
+        } else if (proto === null) {
+          protoVal = { __type: 'primitive', value: null };
+        }
+      } catch {}
+    }
+
+    return {
+      __type: 'object',
+      keys,
+      values,
+      constructorName: prototypeName,
+      isPrototype: true,
+      prototypeName,
+      proto: protoVal,
+    };
+  }
+
+  // ── Arrays ──────────────────────────────────────────────────────────────────────────
   if (Array.isArray(value)) {
     const length = value.length;
     const items = value.slice(0, MAX_ARRAY_ITEMS).map((item, i) =>
       serialize(item, seen, `${path}[${i}]`, depth + 1)
     );
-    return { __type: 'array', items, length };
+
+    let protoVal: SerializedValue | undefined;
+    if (depth < 2) {
+      try {
+        const proto = Object.getPrototypeOf(value);
+        if (proto !== null && proto !== undefined) {
+          protoVal = serialize(proto, seen, `${path}.[[Prototype]]`, depth + 1);
+        }
+      } catch {}
+    }
+
+    return { __type: 'array', items, length, proto: protoVal };
   }
 
-  // Plain object or class instance
+  // ── Regular Plain Object or Class Instance ───────────────────────────────────────────
   const keys = Object.keys(obj).slice(0, MAX_OBJECT_KEYS);
   const values: SerializedValue[] = keys.map((k) =>
     serialize((obj as Record<string, unknown>)[k], seen, `${path}.${k}`, depth + 1)
   );
-  const constructorName =
-    obj.constructor && obj.constructor.name !== 'Object' ? obj.constructor.name : undefined;
 
-  return { __type: 'object', keys, values, constructorName };
+  let constructorName: string | undefined;
+  try {
+    if (obj.constructor && obj.constructor.name && obj.constructor.name !== 'Object') {
+      constructorName = obj.constructor.name;
+    } else if (Object.getPrototypeOf(obj) === null) {
+      constructorName = '[Object: null prototype]';
+    }
+  } catch {}
+
+  let protoVal: SerializedValue | undefined;
+  if (depth < 2) {
+    try {
+      const proto = Object.getPrototypeOf(obj);
+      if (proto !== null && proto !== undefined) {
+        protoVal = serialize(proto, seen, `${path}.[[Prototype]]`, depth + 1);
+      } else if (proto === null) {
+        protoVal = { __type: 'primitive', value: null };
+      }
+    } catch {}
+  }
+
+  return { __type: 'object', keys, values, constructorName, proto: protoVal };
 }
 
 export function serializeArgs(args: unknown[]): SerializedValue[] {

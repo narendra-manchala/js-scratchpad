@@ -1585,6 +1585,11 @@ html, body, #root {
 }
 
 .tree-key { color: var(--text-secondary); }
+.tree-proto-key {
+  color: var(--text-muted);
+  font-style: italic;
+  opacity: 0.85;
+}
 .tree-preview { color: var(--text-muted); font-size: 12px; }
 .tree-children {
   margin-left: 14px;

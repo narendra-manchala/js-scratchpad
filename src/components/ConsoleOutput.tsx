@@ -70,6 +70,11 @@ function valueToText(value: SerializedValue, depth = 0): string {
       return `[\n${items.join(',\n')}${more}\n${indent}]`;
     }
     case 'object': {
+      if (value.isPrototype && value.prototypeName) {
+        if (value.keys.length === 0) return `${value.prototypeName} {}`;
+        const pairs = value.keys.map((k, i) => `${indent}  ${k}: ${valueToText(value.values[i], depth + 1)}`);
+        return `${value.prototypeName} {\n${pairs.join(',\n')}\n${indent}}`;
+      }
       if (value.keys.length === 0) return value.constructorName ? `${value.constructorName} {}` : '{}';
       const pairs = value.keys.map((k, i) => `${indent}  ${k}: ${valueToText(value.values[i], depth + 1)}`);
       const prefix = value.constructorName ? `${value.constructorName} ` : '';
